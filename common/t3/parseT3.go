@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/yaklang/yaklang/common/yserx"
+	"github.com/yaklang/yaklang/common/yso"
 	"io/ioutil"
 	"os"
 	"reflect"
@@ -22,8 +23,10 @@ type T3Header struct {
 	abbrevOffset int
 }
 type T3Request struct {
-	Header T3Header
+	Header    *T3Header
+	MsgAbbrev *OutboundMsgAbbrev
 }
+
 type reader struct {
 	buf      []byte
 	pos      int
@@ -32,6 +35,10 @@ type reader struct {
 
 type InboundMsgAbbrev struct {
 	obj [][]yserx.JavaSerializable
+	n   int // 0表示字符串对象，1表示其它对象
+}
+type OutboundMsgAbbrev struct {
+	obj []yserx.JavaSerializable
 	n   int
 }
 
@@ -128,7 +135,7 @@ func readObject(buf *reader) []yserx.JavaSerializable {
 func ParseT3(data []byte) *T3Request {
 	headerLen := 19
 	var extentbyte []byte
-	t3 := &T3Request{Header: T3Header{}}
+	t3 := &T3Request{Header: &T3Header{}}
 	buf := NewReader(data)
 	buf.Skip(4)
 	t3.Header.cmd = buf.ReadByte()
@@ -168,4 +175,48 @@ func ParseT3(data []byte) *T3Request {
 	}
 	//ioutil.WriteFile(fmt.Sprintf("/Users/z3/Downloads/contextObjs.json"), []byte(res), 0666)
 	return nil
+}
+
+func NewT3Request() *T3Request {
+	return &T3Request{Header: &T3Header{}, MsgAbbrev: &OutboundMsgAbbrev{}}
+}
+
+func (t *T3Request) WriteMsgAbbrev(s yserx.JavaSerializable) {
+	t.MsgAbbrev.obj = append(t.MsgAbbrev.obj, s)
+}
+
+func (t *T3Request) Bytes() ([]byte, error) {
+	t.Header = &T3Header{
+		cmd:          1,
+		flags:        0,
+		hasJVMIDs:    false,
+		hasTX:        false,
+		resopnseId:   -1,
+		invokableId:  -1,
+		abbrevOffset: 0,
+	}
+
+	buf := bytes.NewBuffer([]byte{})
+	bufAbbrevs := bytes.NewBuffer([]byte{})
+	bufAbbrevs.WriteByte(byte(len(t.MsgAbbrev.obj)))
+	for _, obj := range t.MsgAbbrev.obj {
+		objBytes, err := yso.ToBytes(obj)
+		if err != nil {
+			return nil, err
+		}
+		bufAbbrevs.Write([]byte{0xfe, 0x01, 0x00}) //fe 01 00 00 是256，需要这个值大于AS
+		bufAbbrevs.WriteByte(0)                    // 普通对象
+		bufAbbrevs.Write(objBytes)
+	}
+
+	t.Header.abbrevOffset = 19
+	buf.Write(yserx.IntTo4Bytes(bufAbbrevs.Len() + 19))
+	buf.WriteByte(t.Header.cmd)
+	buf.WriteByte(t.Header.qos)
+	buf.WriteByte(t.Header.flags)
+	buf.Write(yserx.IntTo4Bytes(t.Header.resopnseId))
+	buf.Write(yserx.IntTo4Bytes(t.Header.invokableId))
+	buf.Write(yserx.IntTo4Bytes(t.Header.abbrevOffset))
+	buf.Write(bufAbbrevs.Bytes())
+	return buf.Bytes(), nil
 }

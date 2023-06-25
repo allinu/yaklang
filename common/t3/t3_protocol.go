@@ -4,11 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/yaklang/yaklang/common/log"
 	"github.com/yaklang/yaklang/common/utils"
 	"net"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -102,22 +102,25 @@ func (t3 *T3Client) ConnectServer(addr string, proxys ...string) error {
 			break
 		}
 	}
-	helloRes := ""
-	for {
-		line, _, err := buf.ReadLine()
-		if err != nil {
-			return utils.Errorf("read hello response error: %v", err)
-		}
-		helloRes += string(append(line, '\n'))
-		if len(line) == 0 {
-			break
-		}
-	}
-
-	res := utils.StableReader(t3.conn, 1*time.Second, 1024)
-	spew.Dump(string(res))
 	return nil
 }
+
+func (t3 *T3Client) Send(request *T3Request) error {
+	if t3.conn == nil {
+		return utils.Error("not connected")
+	}
+	if request == nil {
+		return utils.Error("request is nil")
+	}
+	reqBytes, err := request.Bytes()
+	if err != nil {
+		return err
+	}
+	os.WriteFile("/Users/z3/Downloads/a.class", reqBytes, 0644)
+	_, err = t3.conn.Write(reqBytes)
+	return err
+}
+
 func NewT3Client() *T3Client {
 	return &T3Client{
 		Version: "10.3.1",

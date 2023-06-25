@@ -1090,7 +1090,7 @@ func (p *JavaSerializationParser) readClassData(r *bufio.Reader, c *JavaClassDes
 		p.increaseIndent()
 		p.debug("Unable to parse externalContents as the format is specific to the implementation class.")
 		p.decreaseIndent()
-		panic("ERROR: unable to parse external content element")
+		//panic("ERROR: unable to parse external content element")
 	}
 
 	// 从 super class 开始

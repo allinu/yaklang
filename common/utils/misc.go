@@ -85,3 +85,13 @@ func GetTargetAddrInterfaceName(targetAddr string) (string, error) {
 	}
 	return "", errors.Errorf("cannot found local interface name for %s", targetAddr)
 }
+
+func GetLastElement[T any](list []T) T {
+	l := len(list)
+	if l == 0 {
+		var zero T
+		return zero
+	} else {
+		return list[l-1]
+	}
+}

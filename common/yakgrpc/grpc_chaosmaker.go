@@ -102,11 +102,11 @@ func (s *Server) ExecuteChaosMakerRule(req *ypb.ExecuteChaosMakerRuleRequest, st
 			case <-stream.Context().Done():
 				return
 			default:
-				sendLogger.Output(&yaklib.YakitStatusCard{
+				sendLogger.YakitAutoLog(&yaklib.YakitStatusCard{
 					Id:   "已运行",
 					Data: fmt.Sprintf("%ds", int64(time.Now().Sub(start).Seconds())),
 				})
-				sendLogger.Output(&yaklib.YakitStatusCard{
+				sendLogger.YakitAutoLog(&yaklib.YakitStatusCard{
 					Id:   "模拟攻击事件",
 					Data: fmt.Sprintf("%d", trafficCounter),
 				})

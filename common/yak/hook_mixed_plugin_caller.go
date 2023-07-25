@@ -240,7 +240,8 @@ func NewMixPluginCaller() (*MixPluginCaller, error) {
 		websiteParamsFilter: filter.NewFilter(),
 		callers:             NewYakToCallerManager(),
 		feedbackHandler: func(result *ypb.ExecResult) error {
-			return yaklib.GetYakitClientInstance().Output(result)
+			yaklib.GetYakitClientInstance().YakitAutoLog(result)
+			return nil
 		},
 	}
 	c.SetLoadPluginTimeout(10)
@@ -728,7 +729,7 @@ func (m *MixPluginCaller) MirrorHTTPFlowEx(
 	m.callers.CallByName(HOOK_MirrorHTTPFlow, isHttps, u, req, rsp, body)
 	urlObj, err := url.Parse(u)
 	if err != nil {
-		yaklib.YakitInfo(yaklib.GetYakitClientInstance())("解析 URL 失败：%v 原因: %v", u, err)
+		yaklib.GetYakitClientInstance().YakitInfo("解析 URL 失败：%v 原因: %v", u, err)
 	}
 	if urlObj != nil {
 		host, port, _ := utils.ParseStringToHostPort(u)

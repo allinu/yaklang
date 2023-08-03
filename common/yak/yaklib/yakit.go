@@ -517,7 +517,7 @@ func AutoInitYakit() *YakitClient {
 		return client
 	} else {
 		client := NewVirtualYakitClient(func(i interface{}) error {
-			log.Error("not set yakit client")
+			log.Debug("not set yakit client")
 			return nil
 		})
 		InitYakit(client)

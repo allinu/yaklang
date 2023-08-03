@@ -476,7 +476,8 @@ func (e *ScriptEngine) exec(ctx context.Context, id string, code string, params 
 	*e.logger = yaklib.CreateYakLogger(fmt.Sprint(yakAbsFile))
 	engine.SetVar("log", *e.logger) // 设置 log 库
 	(*e.logger).SetEngine(engine)
-	client := yaklib.GetYakitClientInstance() // 设置全局 client 的 log
+	clientIns := *yaklib.GetYakitClientInstance()
+	client := &clientIns // 设置全局 client 的 log
 	client.SetYakLog(*e.logger)
 	yaklib.SetEngineClient(engine, client)
 
@@ -497,7 +498,7 @@ func (e *ScriptEngine) exec(ctx context.Context, id string, code string, params 
 			return engine, engine.SafeExecYakcWithCode(ctx, yakcBytes, e.cryptoKey, code)
 		}
 	}
-	return engine, engine.SafeEval(ctx, code)
+	return engine, engine.Eval(ctx, code)
 }
 
 func (e *ScriptEngine) ExecuteWithTaskID(taskId, code string) error {

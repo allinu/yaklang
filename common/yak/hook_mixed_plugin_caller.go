@@ -240,8 +240,7 @@ func NewMixPluginCaller() (*MixPluginCaller, error) {
 		websiteParamsFilter: filter.NewFilter(),
 		callers:             NewYakToCallerManager(),
 		feedbackHandler: func(result *ypb.ExecResult) error {
-			yaklib.GetYakitClientInstance().YakitAutoLog(result)
-			return nil
+			return yaklib.GetYakitClientInstance().Output(result)
 		},
 	}
 	c.SetLoadPluginTimeout(10)

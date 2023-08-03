@@ -3,8 +3,8 @@ package yaktest
 import (
 	"context"
 	"fmt"
-	"github.com/yaklang/yaklang/common/coreplugin"
 	"github.com/yaklang/yaklang/common/utils"
+	"github.com/yaklang/yaklang/common/yakgrpc"
 	"github.com/yaklang/yaklang/common/yakgrpc/ypb"
 	"net"
 	"net/http"
@@ -19,7 +19,7 @@ func getWastTime(f func()) time.Duration {
 	return time.Now().Sub(start)
 }
 func TestMITM(t *testing.T) {
-	var client, err = coreplugin.NewLocalClient()
+	var client, err = yakgrpc.NewLocalClient()
 	if err != nil {
 		t.Fatalf("start mitm local client failed: %s", err)
 	}

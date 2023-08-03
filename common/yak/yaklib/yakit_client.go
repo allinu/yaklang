@@ -37,9 +37,9 @@ func NewVirtualYakitClientWithExecResult(h func(result *ypb.ExecResult) error) *
 	})
 }
 
-func RawHandlerToExecOutput(h func(any)) func(result *ypb.ExecResult) {
-	return func(result *ypb.ExecResult) {
-		h(result)
+func RawHandlerToExecOutput(h func(any) error) func(result *ypb.ExecResult) error {
+	return func(result *ypb.ExecResult) error {
+		return h(result)
 	}
 }
 
@@ -107,16 +107,13 @@ func (c *YakitClient) SetYakLog(logger *YakLogger) {
 }
 
 // 输入
-func (c *YakitClient) YakitLog(level string, tmp string, items ...interface{}) {
+func (c *YakitClient) YakitLog(level string, tmp string, items ...interface{}) error {
 	data := fmt.Sprintf(tmp, items...)
-	err := c.send(&YakitLog{
+	return c.send(&YakitLog{
 		Level:     level,
 		Data:      data,
 		Timestamp: time.Now().Unix(),
 	})
-	if err != nil {
-		log.Error(err)
-	}
 }
 
 func (c *YakitClient) YakitDraw(level string, data interface{}) {
@@ -129,9 +126,9 @@ func (c *YakitClient) YakitDraw(level string, data interface{}) {
 		log.Error(err)
 	}
 }
-func (c *YakitClient) YakitAutoLog(i interface{}) {
+func (c *YakitClient) Output(i interface{}) error {
 	level, msg := MarshalYakitOutput(i)
-	c.YakitLog(level, msg)
+	return c.YakitLog(level, msg)
 }
 func (c *YakitClient) SendRaw(y *YakitLog) error {
 	if c == nil {

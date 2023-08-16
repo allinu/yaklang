@@ -627,29 +627,29 @@ func (p *Proxy) handle(ctx *Context, conn net.Conn, brw *bufio.ReadWriter) error
 		ctx.Session().Set(httpctx.REQUEST_CONTEXT_KEY_ConnectedToHost, parsedConnectedToHost)
 		ctx.Session().Set(httpctx.REQUEST_CONTEXT_KEY_ConnectedTo, connectedTo)
 
-		if err := p.reqmod.ModifyRequest(req); err != nil {
-			if !strings.Contains(err.Error(), "ignore connect") {
-				log.Errorf("martian: error modifying CONNECT request: %v", err)
-				proxyutil.Warning(req.Header, err)
-			}
-		}
-		if session.Hijacked() {
-			log.Debugf("martian: connection hijacked by request modifier")
-			return nil
-		}
+		//if err := p.reqmod.ModifyRequest(req); err != nil {
+		//	if !strings.Contains(err.Error(), "ignore connect") {
+		//		log.Errorf("martian: error modifying CONNECT request: %v", err)
+		//		proxyutil.Warning(req.Header, err)
+		//	}
+		//}
+		//if session.Hijacked() {
+		//	log.Debugf("martian: connection hijacked by request modifier")
+		//	return nil
+		//}
 
 		if p.mitm != nil {
 			log.Debugf("martian: attempting MITM for connection: %s", req.Host)
 			res := p.connectResponse(req)
 
-			if err := p.resmod.ModifyResponse(res); err != nil {
-				log.Errorf("martian: error modifying CONNECT response: %v", err)
-				proxyutil.Warning(res.Header, err)
-			}
-			if session.Hijacked() {
-				log.Debugf("martian: connection hijacked by response modifier")
-				return nil
-			}
+			//if err := p.resmod.ModifyResponse(res); err != nil {
+			//	log.Errorf("martian: error modifying CONNECT response: %v", err)
+			//	proxyutil.Warning(res.Header, err)
+			//}
+			//if session.Hijacked() {
+			//	log.Debugf("martian: connection hijacked by response modifier")
+			//	return nil
+			//}
 
 			if err := res.Write(brw); err != nil {
 				log.Errorf("martian: got error while writing response back to client: %v", err)

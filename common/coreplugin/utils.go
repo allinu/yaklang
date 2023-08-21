@@ -37,6 +37,7 @@ type VulInfo struct {
 	ExpectedResult map[string]int
 	StrictMode     bool
 	RawHTTPRequest []byte
+	Id             string
 }
 
 var initDB = sync.Once{}
@@ -116,7 +117,11 @@ func TestCoreMitmPlug(pluginName string, vulServer VulServerInfo, vulInfo VulInf
 
 	for k, expectedCount := range vulInfo.ExpectedResult {
 		if expected[k] != expectedCount {
-			t.Fatalf("Risk Keyword:[%v] Should Found Vul: %v but got: %v", k, expectedCount, expected[k])
+			checkId := ""
+			if vulInfo.Id != "" {
+				checkId = fmt.Sprintf("CheckID: %v ", vulInfo.Id)
+			}
+			t.Fatalf("%sRisk Keyword:[%v] Should Found Vul: %v but got: %v", checkId, k, expectedCount, expected[k])
 			t.FailNow()
 		}
 	}

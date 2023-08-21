@@ -49,7 +49,7 @@ func init() {
 }
 
 func TestMustPassDebug(t *testing.T) {
-	var debugName = "riskcallback.yak"
+	var debugName = "yakit_client.yak"
 	var debugCases [][]string
 	for k, v := range files {
 		if k == debugName {

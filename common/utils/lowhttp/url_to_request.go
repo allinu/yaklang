@@ -72,3 +72,47 @@ func UrlToRequestPacket(method string, u string, originRequest []byte, originReq
 		return FixHTTPRequestOut(reqRaw)
 	}
 }
+
+func UrlToHTTPRequest(text string) ([]byte, error) {
+	var r *http.Request
+	if !(strings.HasPrefix(text, "http://") || strings.HasPrefix(text, "https://")) {
+		text = "http://" + text
+	}
+	u, err := url.Parse(text)
+	if err != nil {
+		return nil, err
+	}
+	r, err = http.NewRequest("GET", text, http.NoBody)
+	if err != nil {
+		return nil, err
+	}
+
+	if u.RawPath != "" {
+		r.RequestURI = u.RawPath
+	} else {
+		r.RequestURI = u.Path
+	}
+
+	if u.RawQuery != "" {
+		r.RequestURI += "?" + u.RawQuery
+	}
+
+	if u.Fragment != "" {
+		if u.RawFragment != "" {
+			r.RequestURI += "#" + u.RawFragment
+		} else {
+			r.RequestURI += "#" + u.Fragment
+		}
+	}
+
+	if strings.HasSuffix(text, "#") && u.Fragment == "" {
+		r.RequestURI += "#"
+	}
+
+	raw, err := utils.HttpDumpWithBody(r, true)
+	if err != nil {
+		return nil, err
+	}
+	raw = FixHTTPRequestOut(raw)
+	return raw, nil
+}

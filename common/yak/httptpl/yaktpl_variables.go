@@ -2,16 +2,55 @@ package httptpl
 
 import (
 	"bytes"
+	"errors"
 	"github.com/yaklang/yaklang/common/log"
 	"github.com/yaklang/yaklang/common/utils"
 	"strings"
 	"sync"
 )
 
+type TemplateVarTypePrefix string
+
+const (
+	FuzztagPrefix TemplateVarTypePrefix = "@fuzztag"
+	RawPrefix     TemplateVarTypePrefix = "@raw"
+)
+
+type TemplateVarType string
+
+const (
+	FuzztagType   TemplateVarType = "fuzztag"
+	RawType       TemplateVarType = "raw"
+	NucleiDslType TemplateVarType = "nuclei-dsl"
+)
+
 type Var struct {
-	Type string
+	Type TemplateVarType // 需要在保证nuclei中可以正确解析的情况下，携带类型信息，所以对于除nuclei-dsl类型的变量，在值前增加@raw、@fuzztag标记类型
 	Data string
 	Tags []*NucleiTagData
+}
+
+func NewVar(v string) *Var {
+	val := &Var{Data: v, Type: NucleiDslType}
+	if strings.HasPrefix(v, string(FuzztagPrefix)) {
+		val.Data = v[len(string(FuzztagPrefix)):]
+		val.Type = FuzztagType
+	}
+	if strings.HasPrefix(v, string(RawPrefix)) {
+		val.Data = v[len(string(RawPrefix)):]
+		val.Type = RawType
+	}
+	return val
+}
+func (v *Var) GetValue() string {
+	switch v.Type {
+	case FuzztagType:
+		return string(FuzztagPrefix) + v.Data
+	case RawType:
+		return string(RawPrefix) + v.Data
+	default:
+		return v.Data
+	}
 }
 
 type YakVariables struct {
@@ -24,26 +63,34 @@ type YakVariables struct {
 }
 
 func (v *YakVariables) Set(key string, value string) {
-	v.raw[key] = &Var{Data: value}
+	v.raw[key] = NewVar(value)
 }
-func (v *YakVariables) SetWithType(key string, value string, typeName string) {
-	v.raw[key] = &Var{Data: value, Type: typeName}
+func (v *YakVariables) SetWithType(key string, value string, typeName string) error {
+	var tempType TemplateVarType
+	switch typeName {
+	case string(FuzztagType):
+		tempType = FuzztagType
+	case string(RawType):
+		tempType = RawType
+	case string(NucleiDslType):
+		tempType = NucleiDslType
+	default:
+		return errors.New("unknown type")
+	}
+	v.raw[key] = &Var{Data: value, Type: tempType}
+	return nil
 }
 func (v *YakVariables) AutoSet(key string, value string) {
+	v.raw[key] = NewVar(value)
 	if strings.Contains(value, "{{") {
 		tags := ParseNucleiTag(value)
-		v.raw[key] = &Var{
-			Type: "nuclei-dsl",
-			Tags: tags,
-		}
-		return
+		v.raw[key].Tags = tags
 	}
-	v.raw[key] = &Var{Data: value}
 }
 
 func (v *YakVariables) SetNucleiDSL(key string, items []*NucleiTagData) {
 	v.raw[key] = &Var{
-		Type: "nuclei-dsl",
+		Type: NucleiDslType,
 		Tags: items,
 	}
 }
@@ -81,7 +128,7 @@ RETRY:
 				continue
 			}
 			if val, ok := v.raw[dep]; ok {
-				if val.Type == "nuclei-dsl" {
+				if val.Type == NucleiDslType {
 					if result, ok, deps := ExecuteNucleiTags(val.Tags, v.nucleiSandbox, m); !ok {
 						unfinishedVars = deps
 						goto RETRY
@@ -101,7 +148,7 @@ RETRY:
 			}
 
 			switch f.Type {
-			case "nuclei-dsl":
+			case NucleiDslType:
 				if result, ok, deps := ExecuteNucleiTags(f.Tags, v.nucleiSandbox, m); !ok {
 					unresolved = append(unresolved, deps...)
 				} else {

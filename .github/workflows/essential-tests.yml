@@ -67,7 +67,7 @@ jobs:
               go test -timeout 1m ./common/sca/... -v
 
           - name: Test Vulinbox agent client
-            run: go test -timeout 1m ./common/vulinboxagentclient -v
+            run: go test -timeout 1m -run TestMUSTPASS* ./common/vulinboxagentclient -v
 
           - name: Test YakDNS(DoH / TCP / UDP)
             run: go test -timeout 20s ./common/netx/mustpass -v

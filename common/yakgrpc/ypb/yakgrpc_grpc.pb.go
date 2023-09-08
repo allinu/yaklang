@@ -187,6 +187,12 @@ const (
 	Yak_GenerateYsoCode_FullMethodName                            = "/ypb.Yak/GenerateYsoCode"
 	Yak_GenerateYsoBytes_FullMethodName                           = "/ypb.Yak/GenerateYsoBytes"
 	Yak_YsoDump_FullMethodName                                    = "/ypb.Yak/YsoDump"
+	Yak_CreateWebShell_FullMethodName                             = "/ypb.Yak/CreateWebShell"
+	Yak_DeleteWebShell_FullMethodName                             = "/ypb.Yak/DeleteWebShell"
+	Yak_UpdateWebShell_FullMethodName                             = "/ypb.Yak/UpdateWebShell"
+	Yak_QueryWebShells_FullMethodName                             = "/ypb.Yak/QueryWebShells"
+	Yak_Ping_FullMethodName                                       = "/ypb.Yak/Ping"
+	Yak_GetBasicInfo_FullMethodName                               = "/ypb.Yak/GetBasicInfo"
 	Yak_SetYakBridgeLogServer_FullMethodName                      = "/ypb.Yak/SetYakBridgeLogServer"
 	Yak_GetCurrentYakBridgeLogServer_FullMethodName               = "/ypb.Yak/GetCurrentYakBridgeLogServer"
 	Yak_RequireDNSLogDomain_FullMethodName                        = "/ypb.Yak/RequireDNSLogDomain"
@@ -499,7 +505,7 @@ type YakClient interface {
 	GenerateYsoBytes(ctx context.Context, in *YsoOptionsRequerstWithVerbose, opts ...grpc.CallOption) (*YsoBytesResponse, error)
 	YsoDump(ctx context.Context, in *YsoBytesObject, opts ...grpc.CallOption) (*YsoDumpResponse, error)
 	// WebShell
-	CreateWebShell(ctx context.Context, in *WebShell, opts ...grpc.CallOption) (*Empty, error)
+	CreateWebShell(ctx context.Context, in *WebShell, opts ...grpc.CallOption) (*WebShell, error)
 	DeleteWebShell(ctx context.Context, in *DeleteWebShellRequest, opts ...grpc.CallOption) (*Empty, error)
 	UpdateWebShell(ctx context.Context, in *WebShell, opts ...grpc.CallOption) (*WebShell, error)
 	QueryWebShells(ctx context.Context, in *QueryWebShellsRequest, opts ...grpc.CallOption) (*QueryWebShellsResponse, error)
@@ -2676,9 +2682,9 @@ func (c *yakClient) YsoDump(ctx context.Context, in *YsoBytesObject, opts ...grp
 	return out, nil
 }
 
-func (c *yakClient) CreateWebShell(ctx context.Context, in *WebShell, opts ...grpc.CallOption) (*Empty, error) {
-	out := new(Empty)
-	err := c.cc.Invoke(ctx, "/ypb.Yak/CreateWebShell", in, out, opts...)
+func (c *yakClient) CreateWebShell(ctx context.Context, in *WebShell, opts ...grpc.CallOption) (*WebShell, error) {
+	out := new(WebShell)
+	err := c.cc.Invoke(ctx, Yak_CreateWebShell_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -2687,7 +2693,7 @@ func (c *yakClient) CreateWebShell(ctx context.Context, in *WebShell, opts ...gr
 
 func (c *yakClient) DeleteWebShell(ctx context.Context, in *DeleteWebShellRequest, opts ...grpc.CallOption) (*Empty, error) {
 	out := new(Empty)
-	err := c.cc.Invoke(ctx, "/ypb.Yak/DeleteWebShell", in, out, opts...)
+	err := c.cc.Invoke(ctx, Yak_DeleteWebShell_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -2696,7 +2702,7 @@ func (c *yakClient) DeleteWebShell(ctx context.Context, in *DeleteWebShellReques
 
 func (c *yakClient) UpdateWebShell(ctx context.Context, in *WebShell, opts ...grpc.CallOption) (*WebShell, error) {
 	out := new(WebShell)
-	err := c.cc.Invoke(ctx, "/ypb.Yak/UpdateWebShell", in, out, opts...)
+	err := c.cc.Invoke(ctx, Yak_UpdateWebShell_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -2705,7 +2711,7 @@ func (c *yakClient) UpdateWebShell(ctx context.Context, in *WebShell, opts ...gr
 
 func (c *yakClient) QueryWebShells(ctx context.Context, in *QueryWebShellsRequest, opts ...grpc.CallOption) (*QueryWebShellsResponse, error) {
 	out := new(QueryWebShellsResponse)
-	err := c.cc.Invoke(ctx, "/ypb.Yak/QueryWebShells", in, out, opts...)
+	err := c.cc.Invoke(ctx, Yak_QueryWebShells_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -2714,7 +2720,7 @@ func (c *yakClient) QueryWebShells(ctx context.Context, in *QueryWebShellsReques
 
 func (c *yakClient) Ping(ctx context.Context, in *WebShellRequest, opts ...grpc.CallOption) (*WebShellResponse, error) {
 	out := new(WebShellResponse)
-	err := c.cc.Invoke(ctx, "/ypb.Yak/Ping", in, out, opts...)
+	err := c.cc.Invoke(ctx, Yak_Ping_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -2723,7 +2729,7 @@ func (c *yakClient) Ping(ctx context.Context, in *WebShellRequest, opts ...grpc.
 
 func (c *yakClient) GetBasicInfo(ctx context.Context, in *WebShellRequest, opts ...grpc.CallOption) (*WebShellResponse, error) {
 	out := new(WebShellResponse)
-	err := c.cc.Invoke(ctx, "/ypb.Yak/GetBasicInfo", in, out, opts...)
+	err := c.cc.Invoke(ctx, Yak_GetBasicInfo_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -4346,7 +4352,7 @@ type YakServer interface {
 	GenerateYsoBytes(context.Context, *YsoOptionsRequerstWithVerbose) (*YsoBytesResponse, error)
 	YsoDump(context.Context, *YsoBytesObject) (*YsoDumpResponse, error)
 	// WebShell
-	CreateWebShell(context.Context, *WebShell) (*Empty, error)
+	CreateWebShell(context.Context, *WebShell) (*WebShell, error)
 	DeleteWebShell(context.Context, *DeleteWebShellRequest) (*Empty, error)
 	UpdateWebShell(context.Context, *WebShell) (*WebShell, error)
 	QueryWebShells(context.Context, *QueryWebShellsRequest) (*QueryWebShellsResponse, error)
@@ -5010,7 +5016,7 @@ func (UnimplementedYakServer) GenerateYsoBytes(context.Context, *YsoOptionsReque
 func (UnimplementedYakServer) YsoDump(context.Context, *YsoBytesObject) (*YsoDumpResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method YsoDump not implemented")
 }
-func (UnimplementedYakServer) CreateWebShell(context.Context, *WebShell) (*Empty, error) {
+func (UnimplementedYakServer) CreateWebShell(context.Context, *WebShell) (*WebShell, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateWebShell not implemented")
 }
 func (UnimplementedYakServer) DeleteWebShell(context.Context, *DeleteWebShellRequest) (*Empty, error) {
@@ -8479,7 +8485,7 @@ func _Yak_CreateWebShell_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/ypb.Yak/CreateWebShell",
+		FullMethod: Yak_CreateWebShell_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(YakServer).CreateWebShell(ctx, req.(*WebShell))
@@ -8497,7 +8503,7 @@ func _Yak_DeleteWebShell_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/ypb.Yak/DeleteWebShell",
+		FullMethod: Yak_DeleteWebShell_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(YakServer).DeleteWebShell(ctx, req.(*DeleteWebShellRequest))
@@ -8515,7 +8521,7 @@ func _Yak_UpdateWebShell_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/ypb.Yak/UpdateWebShell",
+		FullMethod: Yak_UpdateWebShell_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(YakServer).UpdateWebShell(ctx, req.(*WebShell))
@@ -8533,7 +8539,7 @@ func _Yak_QueryWebShells_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/ypb.Yak/QueryWebShells",
+		FullMethod: Yak_QueryWebShells_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(YakServer).QueryWebShells(ctx, req.(*QueryWebShellsRequest))
@@ -8551,7 +8557,7 @@ func _Yak_Ping_Handler(srv interface{}, ctx context.Context, dec func(interface{
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/ypb.Yak/Ping",
+		FullMethod: Yak_Ping_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(YakServer).Ping(ctx, req.(*WebShellRequest))
@@ -8569,7 +8575,7 @@ func _Yak_GetBasicInfo_Handler(srv interface{}, ctx context.Context, dec func(in
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/ypb.Yak/GetBasicInfo",
+		FullMethod: Yak_GetBasicInfo_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(YakServer).GetBasicInfo(ctx, req.(*WebShellRequest))

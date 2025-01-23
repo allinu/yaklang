@@ -14,16 +14,25 @@ type GroupAndRuleCount struct {
 }
 
 // QuerySyntaxFlowRuleGroup 查询规则组中相关规则的个数
-func QuerySyntaxFlowRuleGroup(db *gorm.DB, params *ypb.QuerySyntaxFlowRuleGroupRequest) (result []*schema.SyntaxFlowGroup, err error) {
+func QuerySyntaxFlowRuleGroup(db *gorm.DB, params *ypb.QuerySyntaxFlowRuleGroupRequest) (*bizhelper.Paginator, []*schema.SyntaxFlowGroup, error) {
 	if params == nil {
-		return nil, utils.Error("query syntax flow rule group failed: query params is nil")
+		return nil, nil, utils.Error("query syntax flow rule group failed: request is nil")
 	}
 	db = db.Model(&schema.SyntaxFlowGroup{}).Preload("Rules")
-	db = FilterSyntaxFlowGroups(db, params.GetFilter())
-	if err = db.Find(&result).Error; err != nil {
-		return nil, err
+	p := params.Pagination
+	if p == nil {
+		p = &ypb.Paging{
+			Page:    1,
+			Limit:   30,
+			OrderBy: "updated_at",
+			Order:   "desc",
+		}
 	}
-	return result, nil
+	db = bizhelper.OrderByPaging(db, p)
+	db = FilterSyntaxFlowGroups(db, params.GetFilter())
+	var ret []*schema.SyntaxFlowGroup
+	paging, db := bizhelper.Paging(db, int(p.Page), int(p.Limit), &ret)
+	return paging, ret, db.Error
 }
 
 func FilterSyntaxFlowGroups(db *gorm.DB, filter *ypb.SyntaxFlowRuleGroupFilter) *gorm.DB {

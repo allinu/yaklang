@@ -12,27 +12,13 @@ import (
 )
 
 func (s *Server) QuerySyntaxFlowRule(ctx context.Context, req *ypb.QuerySyntaxFlowRuleRequest) (*ypb.QuerySyntaxFlowRuleResponse, error) {
-	if req.Pagination == nil {
-		req.Pagination = &ypb.Paging{
-			Page:    1,
-			Limit:   30,
-			OrderBy: "updated_at",
-			Order:   "desc",
-		}
-	}
 	p, data, err := yakit.QuerySyntaxFlowRule(s.GetProfileDatabase(), req)
 	if err != nil {
 		return nil, err
 	}
 	rsp := &ypb.QuerySyntaxFlowRuleResponse{
-		Pagination: &ypb.Paging{
-			Page:     int64(p.Page),
-			Limit:    int64(p.Limit),
-			OrderBy:  req.Pagination.OrderBy,
-			Order:    req.Pagination.Order,
-			RawOrder: req.Pagination.RawOrder,
-		},
-		Total: uint64(p.TotalRecord),
+		Pagination: req.GetPagination(),
+		Total:      uint64(p.TotalRecord),
 		DbMessage: &ypb.DbOperateMessage{
 			TableName: "syntax_flow_rule",
 			Operation: DbOperationQuery,

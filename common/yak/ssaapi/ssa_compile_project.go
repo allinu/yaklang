@@ -2,7 +2,6 @@ package ssaapi
 
 import (
 	"errors"
-
 	"github.com/yaklang/yaklang/common/consts"
 	"github.com/yaklang/yaklang/common/utils"
 	"github.com/yaklang/yaklang/common/utils/filesys"
@@ -30,17 +29,18 @@ func PeepholeCompile(fs fi.FileSystem, size int, opts ...Option) (Programs, erro
 
 func ParseProject(opts ...Option) (Programs, error) {
 	config, err := defaultConfig(opts...)
+	config.fs = filesys.ConvertToUnifiedFs(config.fs, ssadb.GetIrSourceFsSeparators())
 	if err != nil {
 		return nil, err
 	}
 	return config.parseProject()
-
 }
 
 func (c *config) parseProject() (Programs, error) {
 	if c.reCompile {
 		ssadb.DeleteProgram(ssadb.GetDB(), c.ProgramName)
 		ssadb.DeleteSSAProgram(c.ProgramName)
+		DeleteIncludeCache()
 	}
 	if c.databasePath != "" {
 		consts.SetSSADataBasePath(c.databasePath)

@@ -1,7 +1,12 @@
 package yakgrpc
 
 import (
+	"errors"
+	"fmt"
+
+	"github.com/mattn/go-sqlite3"
 	"github.com/samber/lo"
+	"github.com/tidwall/sjson"
 	"github.com/yaklang/yaklang/common/consts"
 	"github.com/yaklang/yaklang/common/schema"
 	"github.com/yaklang/yaklang/common/syntaxflow/sfdb"
@@ -37,6 +42,9 @@ func (s *Server) ExportSyntaxFlows(req *ypb.ExportSyntaxFlowsRequest, stream ypb
 	if ruleDB := ruleDB.Count(&ruleCount); ruleDB.Error != nil {
 		return utils.Wrap(ruleDB.Error, "get syntax flow rule count failed")
 	}
+	if ruleCount == 0 {
+		return utils.Error("no syntax flow rule found")
+	}
 	metadata["count"] = ruleCount
 
 	opts := make([]bizhelper.ExportOption, 0)
@@ -51,6 +59,21 @@ func (s *Server) ExportSyntaxFlows(req *ypb.ExportSyntaxFlowsRequest, stream ypb
 		stream.Send(&ypb.SyntaxflowsProgress{
 			Progress: progress,
 		})
+	}))
+	opts = append(opts, bizhelper.WithExportPreWriteHandler(func(name string, w []byte, metadata bizhelper.MetaData) (newName string, new []byte) {
+		nw, err := sjson.DeleteBytes(w, "CreatedAt")
+		if err != nil {
+			return name, w
+		}
+		w = nw
+
+		nw, err = sjson.DeleteBytes(w, "UpdatedAt")
+		if err != nil {
+			return name, w
+		}
+		w = nw
+
+		return name, w
 	}))
 	err := bizhelper.ExportTableZip[*schema.SyntaxFlowRule](stream.Context(), ruleDB, req.GetTargetPath(), opts...)
 	if err != nil {
@@ -86,6 +109,18 @@ func (s *Server) ImportSyntaxFlows(req *ypb.ImportSyntaxFlowsRequest, stream ypb
 		stream.Send(&ypb.SyntaxflowsProgress{
 			Progress: progress,
 		})
+	}))
+
+	opts = append(opts, bizhelper.WithImportErrorHandler(func(err error) (newErr error) {
+		var sqlErr sqlite3.Error
+		if errors.As(err, &sqlErr) && sqlErr.Code == sqlite3.ErrConstraint {
+			// ignore duplicate error, just send message
+			err = nil
+			stream.Send(&ypb.SyntaxflowsProgress{
+				Verbose: fmt.Sprintf("duplicate rule, skip: %s", sqlErr.Error()),
+			})
+		}
+		return err
 	}))
 
 	ruleDB := db.Model(&schema.SyntaxFlowRule{})

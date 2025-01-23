@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/gobwas/glob"
 	"io"
 	"path/filepath"
 	"strings"
@@ -70,6 +71,8 @@ type config struct {
 	externInfo string
 	// process ctx
 	ctx context.Context
+
+	excludeFile func(path, filename string) bool
 }
 
 func defaultConfig(opts ...Option) (*config, error) {
@@ -85,6 +88,9 @@ func defaultConfig(opts ...Option) (*config, error) {
 		defineFunc:                 make(map[string]any),
 		toProfile:                  false,
 		DatabaseProgramCacheHitter: func(any) {},
+		excludeFile: func(path, filename string) bool {
+			return false
+		},
 	}
 
 	for _, opt := range opts {
@@ -93,6 +99,31 @@ func defaultConfig(opts ...Option) (*config, error) {
 		}
 	}
 	return c, nil
+}
+
+func DefaultExcludeFunc(patterns []string) (Option, error) {
+	var compile []glob.Glob
+	for _, pattern := range patterns {
+		g, err := glob.Compile(pattern)
+		if err != nil {
+			return nil, err
+		}
+		compile = append(compile, g)
+	}
+	return func(c *config) error {
+		c.excludeFile = func(dir string, path string) bool {
+			for _, g := range compile {
+				if match := g.Match(dir); match {
+					return true
+				}
+				if match := g.Match(path); match {
+					return true
+				}
+			}
+			return false
+		}
+		return nil
+	}, nil
 }
 
 func (c *config) CalcHash() string {
@@ -110,6 +141,12 @@ func (c *config) Processf(process float64, format string, arg ...any) {
 	}
 }
 
+func WithExcludeFile(f func(path, filename string) bool) Option {
+	return func(c *config) error {
+		c.excludeFile = f
+		return nil
+	}
+}
 func WithProcess(process ProcessFunc) Option {
 	return func(c *config) error {
 		c.process = process
@@ -437,20 +474,23 @@ var Exports = map[string]any{
 	"NewFromProgramName": FromDatabase,
 	"NewProgramFromDB":   FromDatabase,
 
-	"withLanguage":      WithRawLanguage,
-	"withConfigInfo":    WithConfigInfo,
-	"withExternLib":     WithExternLib,
-	"withExternValue":   WithExternValue,
-	"withProgramName":   WithProgramName,
-	"withDatabasePath":  WithDatabasePath,
-	"withDescription":   WithProgramDescription,
-	"withProcess":       WithProcess,
-	"withEntryFile":     WithFileSystemEntry,
-	"withReCompile":     WithReCompile,
-	"withStrictMode":    WithStrictMode,
-	"withSaveToProfile": WithSaveToProfile,
-	"withContext":       WithContext,
-	"withPeepholeSize":  WithPeepholeSize,
+	"withLanguage":           WithRawLanguage,
+	"withConfigInfo":         WithConfigInfo,
+	"withExternLib":          WithExternLib,
+	"withExternValue":        WithExternValue,
+	"withProgramName":        WithProgramName,
+	"withDatabasePath":       WithDatabasePath,
+	"withDescription":        WithProgramDescription,
+	"withProcess":            WithProcess,
+	"withEntryFile":          WithFileSystemEntry,
+	"withReCompile":          WithReCompile,
+	"withStrictMode":         WithStrictMode,
+	"withSaveToProfile":      WithSaveToProfile,
+	"withContext":            WithContext,
+	"withPeepholeSize":       WithPeepholeSize,
+	"withExcludeFile":        WithExcludeFile,
+	"withDefaultExcludeFunc": DefaultExcludeFunc,
+
 	// language:
 	"Javascript": JS,
 	"Yak":        Yak,

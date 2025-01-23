@@ -5,17 +5,18 @@ programName := cli.String("programName",
     cli.setRequired(true),
     cli.setVerboseName("项目名")
 )
-languages = cli.StringSlice("language", 
-    cli.setMultipleSelect(false), 
-    cli.setSelectOption("Java", "java"), 
-    cli.setSelectOption("PHP", "php"), 
-    cli.setSelectOption("Yaklang", "yak"), 
-    // cli.setSelectOption("JavaScript", "js"), 
-    cli.setSelectOption("Golang", "go"), 
+languages = cli.StringSlice("language",
+    cli.setMultipleSelect(false),
+    cli.setSelectOption("Java", "java"),
+    cli.setSelectOption("PHP", "php"),
+    cli.setSelectOption("Yaklang", "yak"),
+    // cli.setSelectOption("JavaScript", "js"),
+    cli.setSelectOption("Golang", "go"),
     cli.setRequired(true)
 )
+excludeFile := cli.String("excludeFile", cli.setVerboseName("排除文件/文件夹"),cli.setCliGroup("compile"),cli.setDefault("**/vendor/**,vendor/**,**/classes/**,**/target/**"))
 
-info = cli.Json("info", 
+info = cli.Json("info",
     cli.setVerboseName("项目信息"),
     cli.setJsonSchema(<<<JSON
 {
@@ -239,7 +240,7 @@ info = cli.Json("info",
   ]
 }
 JSON,cli.setUISchema(
-    cli.uiGlobalFieldPosition(cli.uiPosHorizontal), 
+    cli.uiGlobalFieldPosition(cli.uiPosHorizontal),
     cli.uiGroups(
         cli.uiGroup(
             cli.uiField("kind", 1),
@@ -255,7 +256,7 @@ JSON,cli.setUISchema(
         ),
         cli.uiGroup(
             cli.uiField(
-                "auth", 
+                "auth",
                 1,
                 cli.uiFieldGroups(
                     cli.uiGroup(cli.uiField("auth", 1)),
@@ -273,7 +274,7 @@ JSON,cli.setUISchema(
         ),
         cli.uiGroup(
             cli.uiField(
-                "proxy", 
+                "proxy",
                 1,
                 cli.uiFieldGroups(
                     cli.uiGroup(cli.uiField("proxy", 1)),
@@ -295,24 +296,24 @@ JSON,cli.setUISchema(
     cli.setRequired(true)
 )
 
-peepholeSize := cli.Int("peepholeSize", 
+peepholeSize := cli.Int("peepholeSize",
     cli.setVerboseName("文件分片大小"),
     cli.setCliGroup("compile"),
     cli.setDefault(0),
     cli.setHelp("0 表示禁用")
 )
-// {{ compile option 
-entry := cli.FileNames("entry", 
+// {{ compile option
+entry := cli.FileNames("entry",
     cli.setVerboseName("项目入口文件"),
     cli.setCliGroup("compile"),
 )
-strictMode = cli.Bool("StrictMode", 
-    cli.setVerboseName("严格模式"), 
+strictMode = cli.Bool("StrictMode",
+    cli.setVerboseName("严格模式"),
     cli.setHelp("如果取消严格模式将会忽略编译错误的文件。将可能导致编译结果缺失部分文件。"),
     cli.setCliGroup("compile"),
-    cli.setDefault(false), 
+    cli.setDefault(false),
 )
-reCompile := cli.Bool("re-compile", 
+reCompile := cli.Bool("re-compile",
     cli.setVerboseName("是否重新编译"),
     cli.setCliGroup("compile"),
     cli.setDefault(true),
@@ -320,14 +321,14 @@ reCompile := cli.Bool("re-compile",
 // }}
 
 // {{ 项目额外信息
-description := cli.Text("description", 
+description := cli.Text("description",
     cli.setVerboseName("项目描述"),
     cli.setCliGroup("information"),
 )
 // }}
 
 
-// {{ database 
+// {{ database
 //dbPaths := cli.FileNames("dbPath",
 //    cli.setVerboseName("数据库路径"),
 //    cli.setCliGroup("database"),
@@ -340,27 +341,29 @@ cli.check()
 //    dbPath = dbPaths[0]
 //}
 
-var language
-if len(languages) > 0 {
+language :=""
+if languages.Len()>0{
     language = languages[0]
 }
 
+
 opts = [
-    ssa.withProgramName(programName), 
+    ssa.withProgramName(programName),
     ssa.withProcess((msg , process )=>{
         yakit.SetProgressEx("complile", process)
         yakit.Info("%s: %f",msg, process)
-    }), 
-    ssa.withLanguage(language), 
-    ssa.withReCompile(reCompile), 
+    }),
+    ssa.withLanguage(language),
+    ssa.withReCompile(reCompile),
     ssa.withStrictMode(strictMode),
     ssa.withDescription(description),
     //ssa.withDatabasePath(dbPath),
     ssa.withSaveToProfile(true),
     ssa.withContext(context.Background()),
-    ssa.withConfigInfo(info), 
+    ssa.withConfigInfo(info),
     ssa.withPeepholeSize(peepholeSize),
-] 
+    ssa.withDefaultExcludeFunc(str.Split(excludeFile, ","))~,
+]
 if len(entry) != 0{
     opts = append(opts, ssa.withEntryFile(entry...))
 }

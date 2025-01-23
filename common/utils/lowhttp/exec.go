@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
@@ -43,6 +44,16 @@ type RedirectFlow struct {
 	Request    []byte
 	Response   []byte
 	RespRecord *LowhttpResponse
+}
+
+func beforeLog(option *LowhttpExecConfig) {
+	atomic.AddInt64(option.BeforeCount, 1)
+	log.Infof("debug counter: %v, %v", "http call", atomic.LoadInt64(option.BeforeCount))
+}
+
+func afterLog(option *LowhttpExecConfig) {
+	atomic.AddInt64(option.AfterCount, 1)
+	log.Infof("debug counter: %v, %v", "http done", atomic.LoadInt64(option.AfterCount))
 }
 
 func HTTP(opts ...LowhttpOpt) (*LowhttpResponse, error) {
@@ -156,6 +167,13 @@ var commonHTTPMethod = map[string]struct{}{
 	http.MethodTrace:   {},
 }
 
+var _debugCounter = new(int64)
+
+func addDebugCounter(prompt string) {
+	result := atomic.AddInt64(_debugCounter, 1)
+	log.Infof("%v: debug counter: %v", prompt, result)
+}
+
 // HTTPWithoutRedirect SendHttpRequestWithRawPacketWithOpt
 func HTTPWithoutRedirect(opts ...LowhttpOpt) (*LowhttpResponse, error) {
 	option := NewLowhttpOption()
@@ -238,6 +256,10 @@ func HTTPWithoutRedirect(opts ...LowhttpOpt) (*LowhttpResponse, error) {
 			response.TooLargeLimit = int64(maxContentLength)
 		}
 
+		if saveHTTPFlowHandler != nil {
+			saveHTTPFlowHandler(response)
+		}
+
 		if response == nil || !saveHTTPFlow {
 			return
 		}
@@ -252,10 +274,6 @@ func HTTPWithoutRedirect(opts ...LowhttpOpt) (*LowhttpResponse, error) {
 				}
 				cancel()
 			}()
-
-			if saveHTTPFlowHandler != nil {
-				saveHTTPFlowHandler(response)
-			}
 
 			SaveLowHTTPResponse(response, saveHTTPFlowSync)
 		}()
@@ -698,18 +716,17 @@ RECONNECT:
 	if withConnPool {
 		// 连接池分支
 		pc := conn.(*persistConn)
-		writeErrCh := make(chan error, 1)
+		writeErrCh := make(chan error, 2)
 		if option.BeforeDoRequest != nil {
 			requestPacket = option.BeforeDoRequest(requestPacket)
 		}
-
 		if oldVersionProxyChecking {
 			requestPacket, err = BuildLegacyProxyRequest(requestPacket)
 			if err != nil {
 				return nil, err
 			}
 		}
-		pc.writeCh <- writeRequest{reqPacket: requestPacket, ch: writeErrCh, reqInstance: reqIns}
+
 		resc := make(chan responseInfo)
 		pc.reqCh <- requestAndResponseCh{
 			reqPacket:   requestPacket,
@@ -718,41 +735,34 @@ RECONNECT:
 			option:      option,
 			writeErrCh:  writeErrCh,
 		}
-	LOOP:
-		for {
-			select {
-			case err := <-writeErrCh:
-				// 写入失败，退出等待
-				if err != nil {
-					if pc.shouldRetryRequest(err) {
-						pc.removeConn()
-						goto RECONNECT
-					}
-					return nil, err
-				}
-			case re := <-resc:
-				// 收到响应
-				if (re.resp == nil) == (re.err == nil) {
-					return nil, utils.Errorf("BUG: internal error: exactly one of res or err should be set; nil=%v", re.resp == nil)
-				}
-				if re.err != nil && len(rawBytes) == 0 {
-					if pc.shouldRetryRequest(re.err) {
-						goto RECONNECT
-					}
-					return nil, re.err
-				}
-				firstResponse = re.resp
-				rawBytes = re.respBytes
-				response.MultiResponse = false
-				traceInfo.ServerTime = re.info.ServerTime
-				break LOOP
-			case <-pc.closeCh:
-				if pc.shouldRetryRequest(pc.closed) {
+		pc.writeCh <- writeRequest{reqPacket: requestPacket, ch: writeErrCh, reqInstance: reqIns}
+		//beforeLog(option)
+		select {
+		case re := <-resc:
+			// get response
+			if (re.resp == nil) == (re.err == nil) {
+				return nil, utils.Errorf("BUG: internal error: exactly one of res or err should be set; nil=%v", re.resp == nil)
+			}
+			if re.err != nil && len(rawBytes) == 0 { // get some bytes but get error too
+				if pc.shouldRetryRequest(re.err) {
 					goto RECONNECT
 				}
-				return nil, pc.closed
+				return nil, re.err
 			}
+			firstResponse = re.resp
+			rawBytes = re.respBytes
+			response.MultiResponse = false
+			traceInfo.ServerTime = re.info.ServerTime
+		case <-pc.ctx.Done(): // if persistConn closed before read response , check error can retry or not
+			if pc.closed == nil {
+				return nil, utils.Error("BUG: closeCh but closed is nil")
+			}
+			if pc.shouldRetryRequest(pc.closed) {
+				goto RECONNECT
+			}
+			return nil, pc.closed
 		}
+		//afterLog(option)
 
 	} else {
 		// 不使用连接池分支

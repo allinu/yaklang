@@ -2,8 +2,9 @@ package aid
 
 import (
 	"context"
-	"github.com/yaklang/yaklang/common/ai/aid/aitool"
 	"io"
+
+	"github.com/yaklang/yaklang/common/ai/aid/aitool"
 
 	"github.com/yaklang/yaklang/common/log"
 	"github.com/yaklang/yaklang/common/utils"
@@ -76,11 +77,7 @@ func (c *Coordinator) Run() error {
 	ep.SetDefaultSuggestionContinue()
 
 	c.config.EmitRequireReviewForPlan(rsp, ep.id)
-	if !c.config.autoAgree {
-		if !ep.WaitTimeoutSeconds(60) {
-			c.config.EmitInfo("user review timeout, use default action: pass")
-		}
-	}
+	c.config.doWaitAgree(nil, ep)
 	params := ep.GetParams()
 	c.config.memory.StoreInteractiveUserInput(ep.id, params)
 	if params == nil {
@@ -119,6 +116,16 @@ func (c *Coordinator) Run() error {
 	c.config.EmitInfo("start to create runtime")
 	rt := c.createRuntime()
 	rt.Invoke(root)
+
+	/*
+		Result Handler
+		Result Handler 是用户自定义的回调函数，用于处理 AI 的输出结果。
+		用户可以在这个回调函数中处理 AI 的输出结果，或者将结果存储到数据库中。
+	*/
+	if c.config.resultHandler != nil {
+		c.config.resultHandler(c.config, c.config.memory)
+		return nil
+	}
 
 	c.config.EmitInfo("start to generate report or result")
 	prompt, err := c.generateReport()

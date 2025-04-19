@@ -10,13 +10,13 @@ TEXT
 )
 
 // FileReader reader = new FileReader("example.txt");
-FileReader(,* as $fileReader);
+FileReader(*<slice(index=1)>  as $fileReader);
 
 // FileInputStream inputStream = new FileInputStream("example.txt");
 FileInputStream(,* as $fileInputStream);
 
 // java.nio.file.Files.readAllBytes,java.nio.file.Files.readString etc...
-Files?{<typeName>?{have: 'java.nio'}}.read*(,* as $nioFileRead);
+Files?{<typeName>?{have: 'java.nio'}}.read(,* as $nioFileRead);
 
 // java.nio.file.Files.newBufferedReader
 Files?{<typeName>?{have: 'java.nio'}}.newBufferedReader(,* as $nioBufferedReader);
@@ -25,7 +25,7 @@ Files?{<typeName>?{have: 'java.nio'}}.newBufferedReader(,* as $nioBufferedReader
 Files?{<typeName>?{have: 'java.nio'}}.newInputStream(,* as $nioInputStream);
 
 // RandomAccessFile file = new RandomAccessFile("example.txt", "r");
-RandomAccessFile?{*().read()}(,* as $randomAccessFile,);
+RandomAccessFile?{*().read()}(,* as $randomAccessFile);
 
 $randomAccessFile as $output;
 $fileReader as $output;

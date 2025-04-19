@@ -677,11 +677,11 @@ func (s *SFFrame) execStatement(i *SFI) error {
 		}
 		callLen := ValuesLen(results)
 		s.debugSubLog("<< push len: %v", callLen)
-		// _ = results.AppendPredecessor(value, s.WithPredecessorContext("call"))
 		s.stack.Push(results)
 
 	case OpGetCallArgs:
-		s.debugSubLog("-- peek")
+		s.debugSubLog("-- getCallArgs pop call args")
+		//in iterStack
 		value := s.stack.Peek()
 		if value == nil {
 			return utils.Wrap(CriticalError, "get call args failed: stack top is empty")
@@ -759,6 +759,16 @@ func (s *SFFrame) execStatement(i *SFI) error {
 			if vs == nil {
 				return utils.Errorf("new ref failed: empty value: %v", i.UnaryStr)
 			}
+			var operator0 ValueOperator
+			count := 0
+			vs.Recursive(func(operator ValueOperator) error {
+				if count == 0 {
+					operator0 = operator
+				}
+				count++
+				return nil
+			})
+			_ = operator0
 			s.debugSubLog(">> get value: %v ", vs)
 			s.stack.Push(vs)
 		} else {
@@ -885,7 +895,7 @@ func (s *SFFrame) execStatement(i *SFI) error {
 			if dup == nil {
 				return utils.Wrapf(CriticalError, "compare opcode failed: stack top is empty")
 			}
-			s.debugSubLog("Remove duplicate :%v", dup.String())
+			s.debugSubLog("Remove duplicate")
 			s.debugSubLog(">> push: %v", ValuesLen(newVal))
 			s.stack.Push(newVal)
 		}
@@ -1273,14 +1283,17 @@ func (s *SFFrame) execStatement(i *SFI) error {
 
 func (s *SFFrame) output(resultName string, operator ValueOperator) error {
 	var values = []ValueOperator{operator}
-	if originValue, existed := s.GetSymbolTable().Get(resultName); existed {
-		values = append(values, originValue)
-	}
-	value := NewValues(values) // for merge
 	// save to result, even if value is empty or nil
 	if resultName == "_" {
-		s.result.UnNameValue = append(s.result.UnNameValue, value)
+		if unnameValue := s.result.UnNameValue; ValuesLen(unnameValue) != 0 {
+			values = append(values, s.result.UnNameValue)
+		}
+		s.result.UnNameValue = NewValues(values) // for merge
 	} else {
+		if originValue, existed := s.GetSymbolTable().Get(resultName); existed {
+			values = append(values, originValue)
+		}
+		value := NewValues(values) // for merge
 		s.GetSymbolTable().Set(resultName, value)
 	}
 	if s.config != nil {

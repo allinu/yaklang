@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -664,4 +665,93 @@ Host: `+utils.HostPort(server, port)+`
 	require.NoError(t, err)
 	require.Contains(t, string(rsp.RawPacket), token)
 
+}
+
+func TestWithStreamHandler(t *testing.T) {
+	host, port := utils.DebugMockHTTP([]byte("HTTP/1.1 200 OK\r\nServer: nginx\r\n\r\n"))
+	if utils.WaitConnect(utils.HostPort(host, port), 3) != nil {
+		t.Fatal("debug server failed")
+	}
+	called := false
+	responseChecked := false
+
+	c := new(int64)
+	add := func() {
+		atomic.AddInt64(c, 1)
+	}
+	get := func() int64 {
+		return atomic.LoadInt64(c)
+	}
+
+	HTTP(WithPacketBytes([]byte(`GET / HTTP/1.1
+Host: `+utils.HostPort(host, port)+"\r\n\r\n")), WithBodyStreamReaderHandler(func(i []byte, closer io.ReadCloser) {
+		add()
+		fmt.Println(string(i))
+		if bytes.Contains(i, []byte("Server: nginx")) {
+			responseChecked = true
+		}
+		called = true
+	}))
+	require.True(t, called)
+	require.True(t, responseChecked)
+	require.Equal(t, get(), int64(1))
+}
+
+func TestWithStreamHandler_BAD(t *testing.T) {
+	host, port := utils.DebugMockHTTPS([]byte("HTTP/1.1 200 OK\r\nServer: nginx\r\n\r\n"))
+	if utils.WaitConnect(utils.HostPort(host, port), 3) != nil {
+		t.Fatal("debug server failed")
+	}
+	called := false
+	responseChecked := false
+	c := new(int64)
+	add := func() {
+		atomic.AddInt64(c, int64(1))
+	}
+	get := func() int64 {
+		return atomic.LoadInt64(c)
+	}
+	HTTP(WithPacketBytes([]byte(`GET / HTTP/1.1
+Host: `+utils.HostPort(host, port)+"\r\n\r\n")), WithBodyStreamReaderHandler(func(i []byte, closer io.ReadCloser) {
+		add()
+		if bytes.Contains(i, []byte("Server: nginx")) {
+			responseChecked = true
+		}
+		called = true
+	}))
+	require.True(t, called)
+	require.False(t, responseChecked)
+	require.Equal(t, get(), int64(1))
+}
+
+func TestWithStreamHandler_BAD2(t *testing.T) {
+	for i := 0; i < 5; i++ {
+		requested := false
+		host, port := utils.DebugMockHTTPHandlerFunc(func(writer http.ResponseWriter, t *http.Request) {
+			requested = true
+			time.Sleep(2 * time.Second)
+		})
+		called := false
+		responseChecked := false
+		c := new(int64)
+		add := func() {
+			atomic.AddInt64(c, 1)
+		}
+		get := func() int64 {
+			return atomic.LoadInt64(c)
+		}
+		HTTP(WithTimeoutFloat(0.2), WithPacketBytes([]byte(`GET / HTTP/1.1
+Host: `+utils.HostPort(host, port)+"\r\n\r\n")), WithBodyStreamReaderHandler(func(i []byte, closer io.ReadCloser) {
+			fmt.Println(string(i))
+			add()
+			if bytes.Contains(i, []byte("Server: nginx")) {
+				responseChecked = true
+			}
+			called = true
+		}))
+		require.Equal(t, get(), int64(1))
+		require.True(t, called)
+		require.True(t, requested)
+		require.False(t, responseChecked)
+	}
 }

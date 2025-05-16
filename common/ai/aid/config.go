@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/yaklang/yaklang/common/ai/aispec"
 	"io"
 	"math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/yaklang/yaklang/common/ai/aispec"
 
 	"github.com/yaklang/yaklang/common/yakgrpc/ypb"
 
@@ -70,7 +71,10 @@ type Config struct {
 	taskAICallback AICallbackType
 	toolAICallback SimpleAiCallbackType
 	tools          []*aitool.Tool
-	eventHandler   func(e *Event)
+
+	// asyncGuardian can auto collect event handler data
+	guardian     *asyncGuardian
+	eventHandler func(e *Event)
 
 	enableToolSearch bool
 	// tool manager
@@ -178,6 +182,11 @@ func (c *Config) SetSyncCallback(i SyncType, callback func() any) {
 func (c *Config) emit(e *Event) {
 	c.m.Lock()
 	defer c.m.Unlock()
+
+	if c.guardian != nil {
+		c.guardian.feed(e)
+	}
+
 	if c.eventHandler == nil {
 		if e.IsStream {
 			if c.debugEvent {
@@ -278,6 +287,7 @@ func newConfigEx(ctx context.Context, id string, offsetSeq int64) *Config {
 		epm:                         newEndpointManagerContext(ctx),
 		streamWaitGroup:             new(sync.WaitGroup),
 		memory:                      m,
+		guardian:                    newAysncGuardian(ctx, id),
 		syncMutex:                   new(sync.RWMutex),
 		syncMap:                     make(map[string]func() any),
 		inputConsumption:            new(int64),
@@ -652,6 +662,9 @@ func WithDisableToolUse(i ...bool) Option {
 
 func WithAIAutoRetry(t int) Option {
 	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
 		config.aiAutoRetry = int64(t)
 		return nil
 	}
@@ -659,6 +672,9 @@ func WithAIAutoRetry(t int) Option {
 
 func WithAITransactionRetry(t int) Option {
 	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
 		if t > 0 {
 			config.aiTransactionAutoRetry = int64(t)
 		}
@@ -666,9 +682,37 @@ func WithAITransactionRetry(t int) Option {
 	}
 }
 
-func WithRiskControlForgeName(forgeName string) Option {
+func WithRiskControlForgeName(forgeName string, callbackType AICallbackType) Option {
 	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
 		config.agreeRiskCtrl.buildinForgeName = forgeName
+		config.agreeRiskCtrl.buildinAICallback = callbackType
 		return nil
+	}
+}
+
+func WithGuardianEventTrigger(eventTrigger EventType, callback GuardianEventTrigger) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
+		if config.guardian == nil {
+			return utils.Error("BUG: guardian cannot be empty (ASYNC Guardian)")
+		}
+		return config.guardian.registerEventTrigger(eventTrigger, callback)
+	}
+}
+
+func WithGuardianMirrorStreamMirror(streamName string, callback GuardianMirrorStreamTrigger) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
+		if config.guardian == nil {
+			return utils.Error("BUG: guardian cannot be empty (ASYNC Guardian)")
+		}
+		return config.guardian.registerMirrorEventTrigger(streamName, callback)
 	}
 }

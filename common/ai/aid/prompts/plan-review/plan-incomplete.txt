@@ -3,7 +3,7 @@
 你是一个根据Schema和上下文输出任务计划JSON的规划助手。我注意到当前的任务计划可能需要进一步完善。让我们一起来优化它。
 
 ## 当前计划概览
-{{ .CurrentPlan.Progress }}
+{{ .CurrentPlan.ProgressWithDetail }}
 
 {{ if .UserSuggestion }}
 ## 用户反馈

@@ -317,6 +317,9 @@ type Function struct {
 	SideEffects       []*FunctionSideEffect
 	SideEffectsReturn []map[*Variable]*FunctionSideEffect
 
+	// throws clause
+	Throws []Value
+
 	// closure function double link. parentFunc <-> childFuncs
 	parent     Value   // parent function;  can be nil if there is no parent function
 	ChildFuncs []Value // child function within this function
@@ -393,6 +396,10 @@ type BasicBlock struct {
 	Index int
 	// BasicBlock graph
 	Preds, Succs []Value
+
+	// for CFG
+	Parent Value   // parent block
+	Child  []Value // child block
 
 	/*
 		if Condition == true: this block reach
@@ -924,14 +931,27 @@ var (
 
 // ================================= Error Handler
 
+type ErrorCatch struct {
+	anValue
+	CatchBody Value
+	Exception Value
+}
+
+var _ Instruction = (*ErrorCatch)(nil)
+var _ User = (*ErrorCatch)(nil)
+var _ Value = (*ErrorCatch)(nil)
+
 // ------------- ErrorHandler
 type ErrorHandler struct {
 	anInstruction
-	catchs           []*BasicBlock
-	try, final, done *BasicBlock
+	Try, Final, Done Value
+	// catch and exception align
+	Catch []Value // error catch
 }
 
 var _ Instruction = (*ErrorHandler)(nil)
+var _ User = (*ErrorHandler)(nil)
+var _ Node = (*ErrorHandler)(nil)
 
 // -------------- PANIC
 type Panic struct {
@@ -970,6 +990,8 @@ type Jump struct {
 }
 
 var _ Instruction = (*Jump)(nil)
+var _ User = (*Jump)(nil)
+var _ Node = (*Loop)(nil)
 
 // ----------- IF
 // The If instruction transfers control to one of the two successors

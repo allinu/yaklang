@@ -130,6 +130,7 @@ func marshalExtraInformation(raw Instruction) map[string]any {
 		if p := ret.GetParent(); p != nil {
 			params["parent"] = p.GetId()
 		}
+		params["throws"] = fetchIds(ret.Throws)
 		params["child_funcs"] = fetchIds(ret.ChildFuncs)
 		params["return"] = fetchIds(ret.Return)
 		params["blocks"] = fetchIds(ret.Blocks)
@@ -171,6 +172,10 @@ func marshalExtraInformation(raw Instruction) map[string]any {
 		if ret.ScopeTable != nil {
 			// params["block_scope_table"] = ret.ScopeTable.GetPersistentId()
 		}
+		if ret.Parent != nil {
+			params["block_parent"] = ret.Parent.GetId()
+		}
+		params["block_child"] = fetchIds(ret.Child)
 	case *BinOp:
 		params["binop_op"] = ret.Op
 		if ret.X != nil {
@@ -191,18 +196,21 @@ func marshalExtraInformation(raw Instruction) map[string]any {
 		//params["mark_parameter_member"] = fetchIds(ret.MarkParameterMember)
 	case *ErrorHandler:
 		// try-catch-finally-done
-		if ret.try != nil {
-			params["errorhandler_try"] = ret.try.GetId()
+		if ret.Try != nil {
+			params["errorhandler_try"] = ret.Try.GetId()
 		}
-		if len(ret.catchs) != 0 {
-			params["errorhandler_catch"] = fetchIds(ret.catchs)
+		if len(ret.Catch) != 0 {
+			params["errorhandler_catch"] = fetchIds(ret.Catch)
 		}
-		if ret.final != nil {
-			params["errorhandler_finally"] = ret.final.GetId()
+		if ret.Final != nil {
+			params["errorhandler_finally"] = ret.Final.GetId()
 		}
-		if ret.done != nil {
-			params["errorhandler_done"] = ret.done.GetId()
+		if ret.Done != nil {
+			params["errorhandler_done"] = ret.Done.GetId()
 		}
+	case *ErrorCatch:
+		params["errorcatch_exception"] = ret.Exception.GetId()
+		params["errorcatch_catch"] = ret.CatchBody.GetId()
 	case *ExternLib:
 		log.Warnf("TBD: marshal ExternLib: %v", ret)
 		// return nil, utils.Errorf("BUG: ConstInst should not be marshaled")
@@ -451,6 +459,8 @@ func unmarshalExtraInformation(inst Instruction, ir *ssadb.IrCode) {
 		// if scopeTable, ok := params["block_scope_table"]; ok {
 		// ret.ScopeTable = GetLazyScopeFromIrScopeId(int64(toInt(scopeTable)))
 		// }
+		ret.Parent = unmarshalValue(params["block_parent"])
+		ret.Child = unmarshalValues(params["block_child"])
 	case *BinOp:
 		ret.Op = BinaryOpcode(params["binop_op"].(string))
 		if x, ok := params["binop_x"]; ok {
@@ -472,6 +482,8 @@ func unmarshalExtraInformation(inst Instruction, ir *ssadb.IrCode) {
 	case *Next:
 		ret.InNext = toBool(params["next_in_next"])
 		ret.Iter = unmarshalValue(params["next_iter"])
+	case *Panic:
+		ret.Info = unmarshalValue(params["panic_value"])
 	case *Parameter:
 		ret.IsFreeValue = params["formalParam_is_freevalue"].(bool)
 		if defaultValue, ok := params["formalParam_default"]; ok {
@@ -501,6 +513,14 @@ func unmarshalExtraInformation(inst Instruction, ir *ssadb.IrCode) {
 		ret.X = unmarshalValue(params["unop_x"])
 	case *Undefined:
 		ret.Kind = UndefinedKind(params["undefined_kind"].(float64))
+	case *ErrorHandler:
+		ret.Try = unmarshalValue(params["errorhandler_try"])
+		ret.Catch = unmarshalValues(params["errorhandler_catch"])
+		ret.Final = unmarshalValue(params["errorhandler_finally"])
+		ret.Done = unmarshalValue(params["errorhandler_done"])
+	case *ErrorCatch:
+		ret.Exception = unmarshalValue(params["errorcatch_exception"])
+		ret.CatchBody = unmarshalValue(params["errorcatch_catch"])
 	case *Jump:
 		if to, ok := params["jump_to"]; ok {
 			ret.To = unmarshalValue(to)
@@ -617,6 +637,7 @@ func unmarshalExtraInformation(inst Instruction, ir *ssadb.IrCode) {
 		if parent, ok := params["parent"]; ok {
 			ret.parent = unmarshalValue(parent)
 		}
+		ret.Throws = unmarshalValues(params["throws"])
 		ret.ChildFuncs = unmarshalValues(params["child_funcs"])
 		ret.Return = unmarshalValues(params["return"])
 		ret.Blocks = unmarshalInstructions(params["blocks"])

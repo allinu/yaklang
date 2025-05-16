@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/yaklang/yaklang/common/ai/aid/aitool"
-	"github.com/yaklang/yaklang/common/log"
-	"github.com/yaklang/yaklang/common/utils"
 	"io"
 	"strings"
 	"time"
+
+	"github.com/yaklang/yaklang/common/ai/aid/aitool"
+	"github.com/yaklang/yaklang/common/log"
+	"github.com/yaklang/yaklang/common/utils"
 )
 
 type EventType string
@@ -18,10 +19,16 @@ const (
 	EVENT_TYPE_STREAM     EventType = "stream"
 	EVENT_TYPE_STRUCTURED EventType = "structured"
 
+	// Token 开销情况
 	EVENT_TYPE_CONSUMPTION EventType = "consumption" // token consumption include `{"input_"}`
-	EVENT_TYPE_PONG        EventType = "pong"        // ping response ping-pong is a check for alive item
-	EVENT_TYPE_PRESSURE    EventType = "pressure"    // pressure for ai context percent
 
+	// 探活
+	EVENT_TYPE_PONG EventType = "pong" // ping response ping-pong is a check for alive item
+
+	// 压力值
+	EVENT_TYPE_PRESSURE EventType = "pressure" // pressure for ai context percent
+
+	// AI 请求用户交互
 	EVENT_TYPE_REQUIRE_USER_INTERACTIVE = "require_user_interactive"
 
 	// risk control prompt is the prompt for risk control
@@ -155,10 +162,10 @@ func (r *Config) emitJson(typeName EventType, nodeId string, i any) {
 }
 
 func (r *Config) EmitStatus(key string, value any) {
-	r.EmitStructured("status", utils.Jsonify(map[string]any{
+	r.EmitStructured("status", map[string]any{
 		"key":   key,
 		"value": value,
-	}))
+	})
 }
 
 func (r *Config) EmitStructured(nodeId string, i any) {
@@ -194,7 +201,7 @@ func (r *Config) EmitRequireReviewForTask(task *aiTask, id string) {
 func (r *Config) EmitRequireReviewForPlan(rsp *PlanResponse, id string) {
 	reqs := map[string]any{
 		"id":        id,
-		"selectors": PlanReviewSuggestions,
+		"selectors": r.getPlanReviewSuggestion(),
 		"plans":     rsp,
 	}
 	if ep, ok := r.epm.loadEndpoint(id); ok {

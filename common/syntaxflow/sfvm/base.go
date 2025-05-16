@@ -20,6 +20,20 @@ func validSSAOpcode(raw string) ssa.Opcode {
 		return ssa.SSAOpcodeReturn
 	case "function", "func", "def":
 		return ssa.SSAOpcodeFunction
+	case "basicblock", "basic_block", "block":
+		return ssa.SSAOpcodeBasicBlock
+	case "if":
+		return ssa.SSAOpcodeIf
+	case "try": // "error_handler"
+		return ssa.SSAOpcodeErrorHandler
+	case "catch":
+		return ssa.SSAOpcodeErrorCatch
+	case "throw", "panic":
+		return ssa.SSAOpcodePanic
+	case "switch":
+		return ssa.SSAOpcodeSwitch
+	case "loop":
+		return ssa.SSAOpcodeLoop
 	default:
 		return -1
 	}

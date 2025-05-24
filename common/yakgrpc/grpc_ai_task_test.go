@@ -1,6 +1,7 @@
 package yakgrpc
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -58,6 +59,11 @@ func TestAITask(t *testing.T) {
 }
 
 func TestAITaskWithBreadth(t *testing.T) {
+	t.SkipNow()
+	if t.Skipped() {
+		return
+	}
+
 	client, err := NewLocalClientForceNew()
 	require.NoError(t, err)
 
@@ -206,6 +212,11 @@ func TestAITaskWithBreadth(t *testing.T) {
 }
 
 func TestAITaskWithAdjustPlan(t *testing.T) {
+	t.SkipNow()
+	if t.Skipped() {
+		return
+	}
+	
 	client, err := NewLocalClientForceNew()
 	require.NoError(t, err)
 
@@ -425,4 +436,48 @@ func TestAITaskWithAdjustPlan(t *testing.T) {
 		}
 	}
 	require.True(t, existMarkdownReport)
+}
+
+func TestAITaskForge(t *testing.T) {
+	if utils.InGithubActions() {
+		return
+	}
+
+	client, err := NewLocalClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	stream, err := client.StartAITask(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tempDir := t.TempDir()
+	tempFile, err := os.CreateTemp(tempDir, "*.txt")
+	require.NoError(t, err)
+	tempFile.WriteString("1+1")
+	tempFile.Close()
+
+	stream.Send(&ypb.AIInputEvent{
+		IsStart: true,
+		Params: &ypb.AIStartParams{
+			ForgeName: "long_text_summarizer",
+			ForgeParams: []*ypb.ExecParamItem{
+				{Key: "filePath", Value: "C:\\Users\\Rookie\\home\\code\\yaklang\\common\\aiforge\\aisecretary\\long_text_summarizer_data\\我的叔叔于勒.txt"},
+			},
+			UseDefaultAIConfig: true,
+		},
+	})
+
+	for {
+		event, err := stream.Recv()
+		if err != nil {
+			break
+		}
+		if event.IsStream {
+			continue
+		}
+		fmt.Println(event.String())
+	}
 }

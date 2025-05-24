@@ -32,6 +32,45 @@ type PlanResponse struct {
 	RootTask *aiTask `json:"root_task"`
 }
 
+func (p *PlanResponse) recursiveMergeSubtask(subtask *aiTask, callback func(i *aiTask) error, stopped *utils.AtomicBool) {
+	if subtask == nil || (stopped != nil && stopped.IsSet()) {
+		return
+	}
+
+	err := callback(subtask)
+	if err != nil {
+		stopped.Set()
+		return
+	}
+	if subtask.Subtasks == nil || len(subtask.Subtasks) <= 0 {
+		return
+	}
+	for _, st := range subtask.Subtasks {
+		p.recursiveMergeSubtask(st, callback, stopped)
+	}
+}
+
+func (p *PlanResponse) MergeSubtask(parentIndex string, name string, goal string) {
+	if p.RootTask == nil {
+		return
+	}
+	p.RootTask.GenerateIndex()
+
+	p.recursiveMergeSubtask(p.RootTask, func(i *aiTask) error {
+		if i.Index != parentIndex {
+			return nil
+		}
+
+		i.Subtasks = append(i.Subtasks, &aiTask{
+			config:     p.RootTask.config,
+			Name:       name,
+			Goal:       goal,
+			ParentTask: i,
+		})
+		return utils.Error("normal exit")
+	}, utils.NewBool(false))
+}
+
 // GenerateFirstPlanPrompt 根据PlanRequest生成prompt
 func (pr *planRequest) GenerateFirstPlanPrompt() (string, error) {
 	tmpl, err := template.New("generateTaskList").Parse(__prompt_GenerateTaskListPrompt)
@@ -103,57 +142,6 @@ func (pr *planRequest) Invoke() (*PlanResponse, error) {
 		}
 	}
 	return pr.config.newPlanResponse(task), nil
-
-	//// 调用 AI 回调函数
-	//saverMutex := new(sync.Mutex)
-	//var seqId int64
-	//var saver CheckpointCommitHandler
-	//
-	//planCreator := func(overrideId int64) (*aiTask, error) {
-	//	responseReader, err := pr.callAI(NewAIRequest(
-	//		prompt,
-	//		WithAIRequest_OnAcquireSeq(func(i int64) {
-	//			saverMutex.Lock()
-	//			defer saverMutex.Unlock()
-	//			seqId = i
-	//		}),
-	//		WithAIRequest_SaveCheckpointCallback(func(f CheckpointCommitHandler) {
-	//			saverMutex.Lock()
-	//			defer saverMutex.Unlock()
-	//			saver = f
-	//		}), WithAIRequest_SeqId(seqId)),
-	//	)
-	//	if err != nil {
-	//		return nil, fmt.Errorf("call ai err: %v", err)
-	//	}
-	//
-	//	saverMutex.Lock()
-	//	defer saverMutex.Unlock()
-	//	if !utils.IsNil(saver) && saver != nil {
-	//		pr.config.EmitInfo("start to save checkpoint into db: %v", seqId)
-	//		cp, err := saver()
-	//		if err != nil {
-	//			pr.config.EmitError("cannot save checkpoint")
-	//		} else {
-	//			pr.config.EmitInfo("checkpoint cached in database: %v:%v", utils.ShrinkString(cp.CoordinatorUuid, 12), cp.Seq)
-	//		}
-	//	}
-	//	return task, nil
-	//}
-	//
-	//var task *aiTask = nil
-	//for utils.IsNil(task) {
-	//	task, err = planCreator(seqId)
-	//	if err != nil {
-	//		pr.config.EmitError("create plan err: %v", err)
-	//		select {
-	//		case <-pr.config.ctx.Done():
-	//		case <-time.After(200 * time.Millisecond):
-	//			pr.config.EmitError("retry to plan with original id: %v", seqId)
-	//		}
-	//	}
-	//}
-	//return pr.config.newPlanResponse(task), nil
 }
 
 func (c *Coordinator) createPlanRequest(rawUserInput string) (*planRequest, error) {

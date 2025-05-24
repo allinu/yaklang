@@ -2,11 +2,10 @@ package aid
 
 import (
 	"context"
+	"github.com/yaklang/yaklang/common/ai/aid/aitool/buildinaitools/searchtools"
 	"io"
 
-	"github.com/yaklang/yaklang/common/ai/aid/aitool"
 	"github.com/yaklang/yaklang/common/ai/aid/aitool/buildinaitools"
-	"github.com/yaklang/yaklang/common/ai/aid/aitool/buildinaitools/searchtools"
 
 	"github.com/yaklang/yaklang/common/log"
 	"github.com/yaklang/yaklang/common/utils"
@@ -51,29 +50,24 @@ func NewCoordinatorContext(ctx context.Context, userInput string, options ...Opt
 		return nil, utils.Errorf("coordinator: load tools (post-init) failed: %v", err)
 	}
 	config.startEventLoop(ctx)
+	config.guardian.setOutputEmitter(config.id, config.eventHandler)
 
 	if config.aiToolManager == nil {
-		config.aiToolManager = buildinaitools.NewToolManager(
-			config.tools,
-			buildinaitools.WithSearchEnabled(config.enableToolSearch),
-			buildinaitools.WithSearcher(searchtools.NewKeyWordSearcher(config.toolAICallback)),
-		)
+		config.aiToolManager = buildinaitools.NewToolManager(append(config.aiToolManagerOption, buildinaitools.WithSearcher(searchtools.NewKeyWordSearcher(
+			func(prompt string) (io.Reader, error) {
+				rsp, err := config.callAI(NewAIRequest(prompt))
+				if err != nil {
+					return nil, err
+				}
+				return rsp.GetOutputStreamReader("tool", false, config), nil
+			})))...)
+
 	}
 	c := &Coordinator{
 		config:    config,
 		userInput: userInput,
 	}
-	config.memory.CreateMemoryTools()
-	config.memory.StoreQuery(c.userInput)
-	config.memory.StoreTools(func() []*aitool.Tool {
-		alltools, err := config.aiToolManager.GetAllTools()
-		if err != nil {
-			log.Errorf("coordinator: get all tools failed: %v", err)
-			return nil
-		}
-		return alltools
-	})
-	config.memory.timeline.BindConfig(config)
+	config.memory.BindCoordinator(c)
 	return c, nil
 }
 
@@ -141,12 +135,12 @@ func (c *Coordinator) Run() error {
 	for stepIdx, taskIns := range root.Subtasks {
 		log.Infof("step %d: %v", stepIdx, taskIns.Name)
 	}
-	alltools, err := c.config.aiToolManager.GetAllTools()
+	alltools, err := c.config.aiToolManager.GetEnableTools()
 	if err != nil {
 		log.Warnf("coordinator: get all tools failed: %v", err)
 	}
 	if len(alltools) <= 0 {
-		log.Warnf("coordinator: no tools found")
+		log.Warnf("coordinator: no tools enable")
 	}
 
 	c.config.EmitInfo("start to create runtime")
@@ -160,27 +154,29 @@ func (c *Coordinator) Run() error {
 	*/
 	if c.config.resultHandler != nil {
 		c.config.resultHandler(c.config)
-		return nil
+	} else if c.config.generateReport {
+		c.config.EmitInfo("start to generate report or result")
+		prompt, err := c.generateReport()
+		if err != nil {
+			c.config.EmitError("generate report failed: %v", err)
+			return utils.Error("coordinator: generate report failed")
+		}
+		aiRsp, err := c.callAI(NewAIRequest(prompt))
+		if err != nil {
+			c.config.EmitError("AICallback failed: %v", err)
+			return utils.Errorf("coordinator: AICallback failed: %v", err)
+		}
+		output, err := io.ReadAll(aiRsp.GetOutputStreamReader("result", false, c.config))
+		if err != nil {
+			c.config.EmitError("read AICallback response failed: %v", err)
+			return utils.Errorf("coordinator: read AICallback response failed: %v", err)
+		}
+		c.config.EmitStructured("result", map[string]any{
+			"data": string(output),
+		})
 	}
-
-	c.config.EmitInfo("start to generate report or result")
-	prompt, err := c.generateReport()
-	if err != nil {
-		c.config.EmitError("generate report failed: %v", err)
-		return utils.Error("coordinator: generate report failed")
-	}
-	aiRsp, err := c.callAI(NewAIRequest(prompt))
-	if err != nil {
-		c.config.EmitError("AICallback failed: %v", err)
-		return utils.Errorf("coordinator: AICallback failed: %v", err)
-	}
-	output, err := io.ReadAll(aiRsp.GetOutputStreamReader("result", false, c.config))
-	if err != nil {
-		c.config.EmitError("read AICallback response failed: %v", err)
-		return utils.Errorf("coordinator: read AICallback response failed: %v", err)
-	}
-	c.config.EmitStructured("result", map[string]any{
-		"data": string(output),
-	})
+	// maybe need special type to tell user run finished,just wait db insert?
+	c.config.EmitInfo("coordinator run finished")
+	c.config.Wait()
 	return nil
 }

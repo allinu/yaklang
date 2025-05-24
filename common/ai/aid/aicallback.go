@@ -3,25 +3,45 @@ package aid
 import (
 	"bytes"
 	"context"
-	"github.com/yaklang/yaklang/common/schema"
 	"io"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/yaklang/yaklang/common/schema"
+
+	"sync"
+
 	"github.com/yaklang/yaklang/common/ai/aispec"
 	"github.com/yaklang/yaklang/common/log"
 	"github.com/yaklang/yaklang/common/utils"
 	"github.com/yaklang/yaklang/common/utils/chanx"
-	"sync"
 )
 
 type AIRequest struct {
+	taskIndex              string
+	detachCheckpoint       bool
 	prompt                 string
 	startTime              time.Time
 	seqId                  int64
 	saveCheckpointCallback func(CheckpointCommitHandler)
 	onAcquireSeq           func(int64)
+}
+
+func (a *AIRequest) GetTaskIndex() string {
+	return a.taskIndex
+}
+
+func (a *AIRequest) SetTaskIndex(taskIndex string) {
+	a.taskIndex = taskIndex
+}
+
+func (ai *AIRequest) SetDetachCheckpoint(b bool) {
+	ai.detachCheckpoint = b
+}
+
+func (ai *AIRequest) IsDetachedCheckpoint() bool {
+	return ai.detachCheckpoint
 }
 
 type CheckpointCommitHandler func() (*schema.AiCheckpoint, error)
@@ -49,12 +69,24 @@ func WithAIRequest_SeqId(i int64) AIRequestOption {
 }
 
 type AIResponse struct {
+	taskIndex           string
 	ch                  *chanx.UnlimitedChan[*OutputStream]
 	enableDebug         bool
 	consumptionCallback func(current int)
 
 	respStartTime time.Time
 	reqStartTime  time.Time
+}
+
+func (a *AIResponse) GetTaskIndex() string {
+	return a.taskIndex
+}
+
+func (a *AIResponse) SetTaskIndex(taskIndex string) {
+	if a == nil {
+		return
+	}
+	a.taskIndex = taskIndex
 }
 
 func (a *AIResponse) Debug(i ...bool) {
@@ -66,25 +98,27 @@ func (a *AIResponse) Debug(i ...bool) {
 	a.enableDebug = i[0]
 }
 
-func (c *Config) teeAIResponse(src *AIResponse, onFirstByte func(), onClose func(teeResponse *AIResponse)) *AIResponse {
+func (c *Config) teeAIResponse(src *AIResponse, onFirstByte func(teeResp *AIResponse), onClose func()) *AIResponse {
 	// 创建第一个响应对象
 	first := c.NewAIResponse()
+	first.SetTaskIndex(src.GetTaskIndex())
 	first.consumptionCallback = nil
 	firstReasonReader, firstReasonWriter := utils.NewBufPipe(nil)
 	firstOutputReader, firstOutputWriter := utils.NewBufPipe(nil)
 
 	// 创建第二个响应对象
 	second := c.NewAIResponse()
+	first.SetTaskIndex(src.GetTaskIndex())
 	second.consumptionCallback = nil
 	secondReasonReader, secondReasonWriter := utils.NewBufPipe(nil)
 	secondOutputReader, secondOutputWriter := utils.NewBufPipe(nil)
 
 	// 获取原始响应的流读取器
-	reasonReader, outputReader := src.GetUnboundStreamReaderEx(onFirstByte, func() {
-		if onClose != nil {
-			onClose(second)
+	reasonReader, outputReader := src.GetUnboundStreamReaderEx(func() {
+		if onFirstByte != nil {
+			onFirstByte(second)
 		}
-	}, nil)
+	}, onClose, nil)
 
 	// 使用等待组确保所有数据复制完成
 	wg := new(sync.WaitGroup)
@@ -117,23 +151,20 @@ func (c *Config) teeAIResponse(src *AIResponse, onFirstByte func(), onClose func
 		secondOutputWriter.Close()
 	}()
 
-	wg2 := new(sync.WaitGroup)
-	wg2.Add(2)
+	copyWg := new(sync.WaitGroup)
+	copyWg.Add(1)
 	go func() {
-		defer wg2.Done()
+		defer copyWg.Done()
 		first.EmitOutputStreamWithoutConsumption(firstReasonReader)
 		first.EmitOutputStreamWithoutConsumption(firstOutputReader)
 		first.Close()
 	}()
 
-	// 将流发送到第二个响应
-	go func() {
-		defer wg2.Done()
-		second.EmitOutputStreamWithoutConsumption(secondReasonReader)
-		second.EmitOutputStreamWithoutConsumption(secondOutputReader)
-		second.Close()
-	}()
-	wg2.Wait()
+	second.EmitOutputStreamWithoutConsumption(secondReasonReader)
+	second.EmitOutputStreamWithoutConsumption(secondOutputReader)
+	second.Close()
+	// 等待所有复制完成
+	copyWg.Wait()
 	return first
 }
 
@@ -249,18 +280,18 @@ func (a *AIResponse) GetOutputStreamReader(nodeId string, system bool, config *C
 			}
 			if i.IsReason {
 				if system {
-					config.EmitSystemReasonStreamEvent(nodeId, a.respStartTime, targetStream)
+					config.EmitSystemReasonStreamEvent(nodeId, a.respStartTime, targetStream, a.GetTaskIndex())
 				} else {
-					config.EmitReasonStreamEvent(nodeId, a.respStartTime, targetStream)
+					config.EmitReasonStreamEvent(nodeId, a.respStartTime, targetStream, a.GetTaskIndex())
 				}
 				continue
 			}
 
 			targetStream = io.TeeReader(targetStream, pw)
 			if system {
-				config.EmitSystemStreamEvent(nodeId, a.respStartTime, targetStream)
+				config.EmitSystemStreamEvent(nodeId, a.respStartTime, targetStream, a.GetTaskIndex())
 			} else {
-				config.EmitStreamEvent(nodeId, a.respStartTime, targetStream)
+				config.EmitStreamEvent(nodeId, a.respStartTime, targetStream, a.GetTaskIndex())
 			}
 		}
 		config.WaitForStream()
@@ -288,7 +319,6 @@ func NewAIRequest(prompt string, opt ...AIRequestOption) *AIRequest {
 }
 
 type AICallbackType func(config *Config, req *AIRequest) (*AIResponse, error)
-type SimpleAiCallbackType func(msg string) (io.Reader, error)
 
 func (c *Config) NewAIResponse() *AIResponse {
 	return &AIResponse{

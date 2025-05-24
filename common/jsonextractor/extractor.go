@@ -5,15 +5,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/yaklang/yaklang/common/log"
-	"github.com/yaklang/yaklang/common/yak/antlr4yak/yakvm/vmstack"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-)
 
-import "github.com/tidwall/gjson"
+	"github.com/tidwall/gjson"
+	"github.com/yaklang/yaklang/common/log"
+	"github.com/yaklang/yaklang/common/yak/antlr4yak/yakvm/vmstack"
+)
 
 var (
 	reQuoted = regexp.MustCompile(`(?P<quoted>(\\x[0-9a-fA-F]{2}))`)
@@ -66,6 +66,12 @@ const (
 	//state_esExpr            = "es-expr"
 	state_reset = "reset"
 	state_quote = "quote"
+
+	// ex state
+	state_objectKey   = "object-key"
+	state_objectValue = "object-value"
+	state_jsonArray   = "json-array"
+	state_arrayItem   = `json-array-item`
 )
 
 func ExtractObjectIndexes(c string) [][2]int {

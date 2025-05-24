@@ -51,7 +51,7 @@ type SFFrame struct {
 	errorSkipStack *utils.Stack[*errorSkipContext]
 
 	Text   string
-	Codes  []*SFI
+	Codes  []*SFI // code list
 	toLeft bool
 
 	predCounter int
@@ -686,12 +686,13 @@ func (s *SFFrame) execStatement(i *SFI) error {
 			return utils.Wrap(CriticalError, "check empty failed: stack top is empty")
 		}
 		index := i.Iter.currentIndex
-		conditions := s.conditionStack.Pop()
+		conditions := s.conditionStack.Peek()
 		//如果是null
+		val := s.stack.Pop()
 		if len(conditions) == index+1 && !conditions[index] {
 			return nil
 		}
-		val := s.stack.Pop()
+		conditions = s.conditionStack.Pop()
 		if len(conditions) < index+1 {
 			return utils.Errorf("check empty failed: stack top is empty")
 		}
@@ -949,18 +950,11 @@ func (s *SFFrame) execStatement(i *SFI) error {
 		}
 
 		newVal, condition := values.CompareOpcode(comparator)
-		if newVal != nil && !newVal.IsEmpty() {
-			dup := s.stack.Pop()
-			if dup == nil {
-				return utils.Wrapf(CriticalError, "compare opcode failed: stack top is empty")
-			}
-			s.debugSubLog("Remove duplicate :%v", dup.String())
-			s.debugSubLog(">> push: %v", ValuesLen(newVal))
-			s.stack.Push(newVal)
-		}
+		s.stack.Push(newVal)
 		s.conditionStack.Push(condition)
 	case OpCompareString:
 		s.debugSubLog(">> pop")
+		//pop到原值
 		values := s.stack.Pop()
 		if values == nil {
 			return utils.Wrap(CriticalError, "BUG: get top defs failed, empty stack")
@@ -980,15 +974,7 @@ func (s *SFFrame) execStatement(i *SFI) error {
 			comparator.AddCondition(v, ValidConditionFilter(i.MultiOperator[index]))
 		}
 		newVal, condition := values.CompareString(comparator)
-		if newVal != nil && !newVal.IsEmpty() {
-			dup := s.stack.Pop()
-			if dup == nil {
-				return utils.Wrapf(CriticalError, "compare string failed: stack top is empty")
-			}
-			s.debugSubLog("Remove duplicate :%v", dup.String())
-			s.debugSubLog(">> push: %v", ValuesLen(newVal))
-			s.stack.Push(newVal)
-		}
+		s.stack.Push(newVal)
 		s.conditionStack.Push(condition)
 	case OpVersionIn:
 		value := s.stack.Peek()

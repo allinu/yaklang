@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/yaklang/yaklang/common/ai/aispec"
-	"io"
+	"github.com/yaklang/yaklang/common/ai"
 	"math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/yaklang/yaklang/common/ai/aispec"
 
 	"github.com/yaklang/yaklang/common/yakgrpc/ypb"
 
@@ -49,6 +50,7 @@ type Config struct {
 	cancel context.CancelFunc
 
 	startInputEventOnce sync.Once
+	wg                  sync.WaitGroup // sub task wait group
 
 	idSequence  int64
 	idGenerator func() int64
@@ -68,13 +70,14 @@ type Config struct {
 
 	// no need to think, low level
 	taskAICallback AICallbackType
-	toolAICallback SimpleAiCallbackType
-	tools          []*aitool.Tool
-	eventHandler   func(e *Event)
 
-	enableToolSearch bool
+	// asyncGuardian can auto collect event handler data
+	guardian     *asyncGuardian
+	eventHandler func(e *Event)
+
 	// tool manager
-	aiToolManager *buildinaitools.AiToolManager
+	aiToolManager       *buildinaitools.AiToolManager
+	aiToolManagerOption []buildinaitools.ToolManagerOption
 
 	// task ai resp callback
 	taskAIRespCallback func(string, *Config)
@@ -85,6 +88,7 @@ type Config struct {
 	timelineLimit             int
 	timelineContentLimit      int
 	timelineTotalContentLimit int
+	keywords                  []string // task keywords, maybe tools name ,help ai to plan
 
 	// stream waitgroup
 	streamWaitGroup *sync.WaitGroup
@@ -96,11 +100,11 @@ type Config struct {
 	allowRequireForUserInteract bool
 
 	// do not use it directly, use doAgree() instead
-	agreePolicy    AgreePolicyType
-	agreeInterval  time.Duration
-	agreeAIScore   float64
-	agreeRiskCtrl  *riskControl
-	agreeAssistant *AIAssistant
+	agreePolicy         AgreePolicyType
+	agreeInterval       time.Duration
+	agreeAIScore        float64
+	agreeRiskCtrl       *riskControl
+	agreeManualCallback func(context.Context, *Config) (aitool.InvokeParams, error)
 
 	//review suggestion
 
@@ -117,6 +121,30 @@ type Config struct {
 
 	resultHandler          func(*Config)
 	extendedActionCallback map[string]func(config *Config, action *Action)
+
+	promptHook     func(string) string
+	generateReport bool
+}
+
+func (c *Config) MakeInvokeParams() aitool.InvokeParams {
+	p := make(aitool.InvokeParams)
+	p["runtime_id"] = c.id
+	return p
+}
+
+func (c *Config) Add(delta int) {
+	c.wg.Add(delta)
+	return
+}
+
+func (c *Config) Done() {
+	c.wg.Done()
+	return
+}
+
+func (c *Config) Wait() {
+	c.wg.Wait()
+	return
 }
 
 func (c *Config) AcquireId() int64 {
@@ -178,6 +206,11 @@ func (c *Config) SetSyncCallback(i SyncType, callback func() any) {
 func (c *Config) emit(e *Event) {
 	c.m.Lock()
 	defer c.m.Unlock()
+
+	if c.guardian != nil {
+		c.guardian.feed(e)
+	}
+
 	if c.eventHandler == nil {
 		if e.IsStream {
 			if c.debugEvent {
@@ -220,12 +253,22 @@ func initDefaultTools(c *Config) error { // set config default tools
 	if err := WithTools(buildinaitools.GetBasicBuildInTools()...)(c); err != nil {
 		return utils.Wrapf(err, "get basic build-in tools fail")
 	}
-
 	memoryTools, err := c.memory.CreateBasicMemoryTools()
 	if err != nil {
 		return utils.Errorf("create memory tools: %v", err)
 	}
 	if err := WithTools(memoryTools...)(c); err != nil {
+		return err
+	}
+	return nil
+}
+
+func initDefaultAICallback(c *Config) error { // set config default tools
+	defaultAICallback := AIChatToAICallbackType(ai.Chat)
+	if defaultAICallback == nil {
+		return nil
+	}
+	if err := WithAICallback(defaultAICallback)(c); err != nil {
 		return err
 	}
 	return nil
@@ -278,6 +321,7 @@ func newConfigEx(ctx context.Context, id string, offsetSeq int64) *Config {
 		epm:                         newEndpointManagerContext(ctx),
 		streamWaitGroup:             new(sync.WaitGroup),
 		memory:                      m,
+		guardian:                    newAysncGuardian(ctx, id),
 		syncMutex:                   new(sync.RWMutex),
 		syncMap:                     make(map[string]func() any),
 		inputConsumption:            new(int64),
@@ -288,37 +332,39 @@ func newConfigEx(ctx context.Context, id string, offsetSeq int64) *Config {
 		allowRequireForUserInteract: true,
 		timelineLimit:               10,
 		timelineContentLimit:        30 * 1024,
+		aiToolManagerOption:         make([]buildinaitools.ToolManagerOption, 0),
 	}
 	c.epm.config = c // review
 	if err := initDefaultTools(c); err != nil {
 		log.Errorf("init default tools: %v", err)
 	}
+
+	if err := initDefaultAICallback(c); err != nil {
+		log.Errorf("init default ai callback: %v", err)
+	}
+
 	return c
 }
 
 type Option func(config *Config) error
 
-func WithTool(tool *aitool.Tool) Option {
+func WithCoordinatorId(id string) Option {
 	return func(config *Config) error {
 		config.m.Lock()
 		defer config.m.Unlock()
-		config.tools = append(config.tools, tool)
+		config.id = id
 		return nil
 	}
 }
 
-func WithYOLO(i ...bool) Option {
+func WithSequence(seq int64) Option {
 	return func(config *Config) error {
 		config.m.Lock()
 		defer config.m.Unlock()
-		if len(i) > 0 {
-			if i[0] {
-				config.setAgreePolicy(AgreePolicyYOLO)
-			} else {
-				config.setAgreePolicy(AgreePolicyManual)
-			}
-		} else {
-			config.setAgreePolicy(AgreePolicyYOLO)
+		var idGenerator = new(int64)
+		config.idSequence = atomic.AddInt64(idGenerator, seq)
+		config.idGenerator = func() int64 {
+			return atomic.AddInt64(idGenerator, 1)
 		}
 		return nil
 	}
@@ -336,15 +382,6 @@ func WithExtendedActionCallback(name string, cb func(config *Config, action *Act
 	}
 }
 
-func WithAgreeAIAssistant(a *AIAssistant) Option {
-	return func(config *Config) error {
-		config.m.Lock()
-		defer config.m.Unlock()
-		config.agreeAssistant = a
-		return nil
-	}
-}
-
 func WithDisallowRequireForUserPrompt() Option {
 	return func(config *Config) error {
 		config.m.Lock()
@@ -354,12 +391,28 @@ func WithDisallowRequireForUserPrompt() Option {
 	}
 }
 
-func WithAgreeAuto(auto bool, interval time.Duration) Option {
+func WithManualAssistantCallback(cb func(context.Context, *Config) (aitool.InvokeParams, error)) Option {
 	return func(config *Config) error {
 		config.m.Lock()
 		defer config.m.Unlock()
-		config.setAgreePolicy(AgreePolicyAuto)
-		config.agreeInterval = interval
+		config.agreeManualCallback = cb
+		return nil
+	}
+}
+
+func WithAgreeYOLO(i ...bool) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+		if len(i) > 0 {
+			if i[0] {
+				config.setAgreePolicy(AgreePolicyYOLO)
+			} else {
+				config.setAgreePolicy(AgreePolicyManual)
+			}
+		} else {
+			config.setAgreePolicy(AgreePolicyYOLO)
+		}
 		return nil
 	}
 }
@@ -382,16 +435,20 @@ func WithAIAgree() Option {
 	}
 }
 
-func WithAgreeManual() Option {
+func WithAgreeManual(cb ...func(context.Context, *Config) (aitool.InvokeParams, error)) Option {
 	return func(config *Config) error {
 		config.m.Lock()
 		defer config.m.Unlock()
 		config.setAgreePolicy(AgreePolicyManual)
+		if len(cb) > 0 {
+			config.agreeManualCallback = cb[0]
+		}
+
 		return nil
 	}
 }
 
-func WithAIAgreeAuto(interval time.Duration) Option {
+func WithAgreeAuto(interval time.Duration) Option {
 	return func(config *Config) error {
 		config.m.Lock()
 		defer config.m.Unlock()
@@ -414,27 +471,11 @@ func WithAllowRequireForUserInteract(opts ...bool) Option {
 	}
 }
 
-func WithTools(tool ...*aitool.Tool) Option {
-	return func(config *Config) error {
-		config.m.Lock()
-		defer config.m.Unlock()
-		config.tools = append(config.tools, tool...)
-		return nil
-	}
-}
-
 func WithAICallback(cb AICallbackType) Option {
 	return func(config *Config) error {
 		config.m.Lock()
 		defer config.m.Unlock()
 		warpedCb := config.wrapper(cb)
-		config.toolAICallback = func(msg string) (io.Reader, error) {
-			rsp, err := warpedCb(config, NewAIRequest(msg))
-			if err != nil {
-				return nil, err
-			}
-			return rsp.GetOutputStreamReader("tool", false, config), nil
-		}
 		config.coordinatorAICallback = warpedCb
 		config.taskAICallback = warpedCb
 		config.planAICallback = warpedCb
@@ -519,10 +560,65 @@ func WithOmniSearchTool() Option {
 
 func WithAiToolsSearchTool() Option {
 	return func(config *Config) error {
-		config.enableToolSearch = true
+		config.m.Lock()
+		defer config.m.Unlock()
+		if config.aiToolManagerOption == nil {
+			config.aiToolManagerOption = make([]buildinaitools.ToolManagerOption, 0)
+		}
+		config.aiToolManagerOption = append(config.aiToolManagerOption,
+			buildinaitools.WithSearchEnabled(true))
 		return nil
 	}
 }
+
+func WithEnableToolsName(toolsName ...string) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+		if config.aiToolManagerOption == nil {
+			config.aiToolManagerOption = make([]buildinaitools.ToolManagerOption, 0)
+		}
+		config.aiToolManagerOption = append(config.aiToolManagerOption, buildinaitools.WithEnabledTools(toolsName))
+		return nil
+	}
+}
+
+func WithDisableToolsName(toolsName ...string) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+		if config.aiToolManagerOption == nil {
+			config.aiToolManagerOption = make([]buildinaitools.ToolManagerOption, 0)
+		}
+		config.aiToolManagerOption = append(config.aiToolManagerOption, buildinaitools.WithDisableTools(toolsName))
+		return nil
+	}
+}
+
+func WithTool(tool *aitool.Tool) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+		if config.aiToolManagerOption == nil {
+			config.aiToolManagerOption = make([]buildinaitools.ToolManagerOption, 0)
+		}
+		config.aiToolManagerOption = append(config.aiToolManagerOption, buildinaitools.WithExtendTools([]*aitool.Tool{tool}, true))
+		return nil
+	}
+}
+
+func WithTools(tool ...*aitool.Tool) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+		if config.aiToolManagerOption == nil {
+			config.aiToolManagerOption = make([]buildinaitools.ToolManagerOption, 0)
+		}
+		config.aiToolManagerOption = append(config.aiToolManagerOption, buildinaitools.WithExtendTools(tool, true))
+		return nil
+	}
+}
+
 func WithDebugPrompt(i ...bool) Option {
 	return func(config *Config) error {
 		config.m.Lock()
@@ -583,6 +679,15 @@ func WithAppendPersistentMemory(i ...string) Option {
 		defer config.m.Unlock()
 		config.persistentMemory = append(config.persistentMemory, i...)
 		config.memory.StoreAppendPersistentInfo(i...)
+		return nil
+	}
+}
+
+func WithToolKeywords(i ...string) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+		config.keywords = append(config.keywords, i...)
 		return nil
 	}
 }
@@ -652,6 +757,9 @@ func WithDisableToolUse(i ...bool) Option {
 
 func WithAIAutoRetry(t int) Option {
 	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
 		config.aiAutoRetry = int64(t)
 		return nil
 	}
@@ -659,6 +767,9 @@ func WithAIAutoRetry(t int) Option {
 
 func WithAITransactionRetry(t int) Option {
 	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
 		if t > 0 {
 			config.aiTransactionAutoRetry = int64(t)
 		}
@@ -666,9 +777,63 @@ func WithAITransactionRetry(t int) Option {
 	}
 }
 
-func WithRiskControlForgeName(forgeName string) Option {
+func WithRiskControlForgeName(forgeName string, callbackType AICallbackType) Option {
 	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
 		config.agreeRiskCtrl.buildinForgeName = forgeName
+		config.agreeRiskCtrl.buildinAICallback = callbackType
 		return nil
 	}
+}
+
+func WithGuardianEventTrigger(eventTrigger EventType, callback GuardianEventTrigger) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
+		if config.guardian == nil {
+			return utils.Error("BUG: guardian cannot be empty (ASYNC Guardian)")
+		}
+		return config.guardian.registerEventTrigger(eventTrigger, callback)
+	}
+}
+
+func WithGuardianMirrorStreamMirror(streamName string, callback GuardianMirrorStreamTrigger) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
+		if config.guardian == nil {
+			return utils.Error("BUG: guardian cannot be empty (ASYNC Guardian)")
+		}
+		return config.guardian.registerMirrorEventTrigger(streamName, callback)
+	}
+}
+
+func WithPromptHook(c func(string) string) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
+		config.promptHook = c
+		return nil
+	}
+}
+
+func WithGenerateReport(b bool) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
+		config.generateReport = b
+		return nil
+	}
+}
+
+func WithQwenNoThink() Option {
+	return WithPromptHook(func(origin string) string {
+		return origin + "/nothink"
+	})
 }

@@ -1,7 +1,6 @@
 package aitool
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,12 +15,7 @@ import (
 
 // InvokeCallback 定义工具调用回调函数的签名
 type InvokeCallback func(params InvokeParams, stdout io.Writer, stderr io.Writer) (any, error)
-type ChatToAiFuncType func(msg string) (io.Reader, error)
-type ToolInvokeCtx struct {
-	Ctx          context.Context
-	ChatToAiFunc ChatToAiFuncType
-}
-type InvokeCallbackWithCtx func(ctx *ToolInvokeCtx, params InvokeParams, stdout io.Writer, stderr io.Writer) (any, error)
+
 type Tool struct {
 	*mcp.Tool
 	// A list of keywords for tool indexing and searching.
@@ -475,12 +469,17 @@ func (t *Tool) ToJSONSchema() map[string]any {
 		}
 	}
 
+	finalRequires := []string{"tool", "@action"}
+	if _, ok := properties["params"]; ok {
+		finalRequires = append(finalRequires, "params")
+	}
+
 	// 构建最终的JSON Schema
 	schema := map[string]any{
 		"$schema":              "http://json-schema.org/draft-07/schema#",
 		"type":                 "object",
 		"properties":           properties,
-		"required":             []string{"tool", "@action"},
+		"required":             []string{"tool", "@action", "params"},
 		"additionalProperties": false,
 	}
 

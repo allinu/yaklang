@@ -2,15 +2,17 @@ package ai
 
 import (
 	"context"
+	_ "embed"
+	"fmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/yaklang/yaklang/common/ai/aispec"
+	"github.com/yaklang/yaklang/common/consts"
 	"github.com/yaklang/yaklang/common/utils"
 	"github.com/yaklang/yaklang/common/utils/lowhttp/poc"
 	"github.com/yaklang/yaklang/common/yakgrpc/yakit"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -26,15 +28,64 @@ func TestDashscope_Search(t *testing.T) {
 	}
 	keyPath := filepath.Join(dir, `yakit-projects/yaklang-bailian-apikey.txt`)
 	keyContent, _ := os.ReadFile(keyPath)
-	ch, err := StructuredStream("web fuzzer 用法", aispec.WithType("yaklang-com-search"), aispec.WithAPIKey(string(keyContent)))
+	client := GetAI("tongyi",
+		aispec.WithType("tongyi"),
+		aispec.WithAPIKey(string(keyContent)),
+		aispec.WithModel("qwen-max"),
+		aispec.WithDebugStream(true),
+	)
+	client.Chat("你是谁？输出一个400字故事")
+}
+
+func TestAIBalanceLatest(t *testing.T) {
+	if utils.InGithubActions() {
+		return
+	}
+
+	dir, err := os.UserHomeDir()
 	if err != nil {
 		t.Fail()
 	}
-	for data := range ch {
-		if strings.HasPrefix(data.OutputNodeId, "End_") {
-			println(data.OutputText)
-		}
+	keyPath := filepath.Join(dir, `yakit-projects/aibalance.txt`)
+	keyContent, _ := os.ReadFile(keyPath)
+	client := GetAI("aibalance",
+		aispec.WithType("aibalance"),
+		aispec.WithAPIKey(string(keyContent)),
+		aispec.WithModel("gemini-2.0-flash"),
+		aispec.WithDebugStream(true),
+	)
+	client.Chat("你是谁？输出一个400字故事")
+}
+
+//go:embed demo2.jpg
+var imgzip string
+
+func TestQwenVLMaxLatest(t *testing.T) {
+	if utils.InGithubActions() {
+		return
 	}
+	dir, err := os.UserHomeDir()
+	if err != nil {
+		t.Fail()
+	}
+	keyPath := filepath.Join(dir, `yakit-projects/yaklang-bailian-apikey.txt`)
+	keyContent, _ := os.ReadFile(keyPath)
+
+	a := consts.TempAIFileFast("*.jpg", imgzip)
+
+	client := GetAI("tongyi", aispec.WithType("tongyi"),
+		aispec.WithAPIKey(string(keyContent)),
+		aispec.WithImageFile(a),
+		aispec.WithModel(`qwen-vl-max-latest`),
+		aispec.WithDebugStream(true),
+	)
+	result, err := client.Chat("你看看图片中是什么？")
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+
+	fmt.Println(string(result))
 }
 
 func TestAutoUpdateAiList(t *testing.T) {
@@ -89,18 +140,18 @@ func (t *TestGateway) SupportedStructuredStream() bool {
 	return false
 }
 
-func (t *TestGateway) StructuredStream(s string, function ...aispec.Function) (chan *aispec.StructuredData, error) {
+func (t *TestGateway) StructuredStream(s string, function ...any) (chan *aispec.StructuredData, error) {
 	ch := make(chan *aispec.StructuredData)
 	defer close(ch)
 	return ch, nil
 }
 
-func (t *TestGateway) Chat(s string, function ...aispec.Function) (string, error) {
+func (t *TestGateway) Chat(s string, function ...any) (string, error) {
 	t.config.StreamHandler(nil)
 	return "ok", nil
 }
 
-func (t *TestGateway) ChatEx(details []aispec.ChatDetail, function ...aispec.Function) ([]aispec.ChatChoice, error) {
+func (t *TestGateway) ChatEx(details []aispec.ChatDetail, function ...any) ([]aispec.ChatChoice, error) {
 	return nil, nil
 }
 

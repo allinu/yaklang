@@ -11,6 +11,18 @@ import (
 )
 
 func TestSimple(t *testing.T) {
+	t.Run("test get function", func(t *testing.T) {
+		ssatest.CheckSyntaxFlow(t, `
+func a(){}
+func b(){}
+`, `
+*?{opcode: func} as $sink
+`, map[string][]string{"sink": {
+			"Function-@main",
+			"Function-a",
+			"Function-b",
+		}}, ssaapi.WithLanguage(ssaapi.Yak))
+	})
 	t.Run("Test opcode", func(t *testing.T) {
 		ssatest.CheckSyntaxFlow(t, `
 		aa = 1 // constant
@@ -383,4 +395,41 @@ alert $output;`, map[string][]string{
 				"target1": {"11"},
 			})
 	})
+}
+
+func TestCondition_CheckType(t *testing.T) {
+	code := `
+package org.joychou.config;
+class A{
+	public void test() {
+		Exception e = 11; 
+		InvalidClassException e2 = 22; 
+		IOException e3 = 33;
+		XXX e4 = 44;
+	}
+}
+	`
+
+	t.Run("check normal have is string contain", func(t *testing.T) {
+		ssatest.CheckSyntaxFlow(t, code, `
+e* as $target 
+$target?{<typeName>?{have:Exception}} as $output
+	`, map[string][]string{
+			"output": {"11", "22", "33"},
+		}, ssaapi.WithLanguage(ssaapi.JAVA))
+	})
+
+	t.Run("check normal have regexp", func(t *testing.T) {
+		ssatest.CheckSyntaxFlow(t, code, `
+e* as $target
+$target?{<typeName>?{have:/^Exception$/}} as $output
+`, map[string][]string{
+			"output": {"11"},
+		}, ssaapi.WithLanguage(ssaapi.JAVA))
+	})
+}
+
+func TestSearch(t *testing.T) {
+	code := `function a(){}`
+	ssatest.CheckSyntaxFlow(t, code, `*?{opcode: const}`, map[string][]string{}, ssaapi.WithLanguage(ssaapi.Yak))
 }

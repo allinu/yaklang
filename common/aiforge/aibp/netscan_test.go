@@ -1,27 +1,22 @@
 package aibp
 
 import (
-	"context"
-	"github.com/yaklang/yaklang/common/ai/aid"
-	"github.com/yaklang/yaklang/common/aiforge"
-	"github.com/yaklang/yaklang/common/yakgrpc/ypb"
 	"testing"
+
+	"github.com/davecgh/go-spew/spew"
+	"github.com/yaklang/yaklang/common/ai/aid"
 )
 
 func TestNetScan(t *testing.T) {
-	result, err := aiforge.ExecuteForge(
-		`netscan`,
-		context.Background(),
-		[]*ypb.ExecParamItem{
-			{Key: "query", Value: "www.example.com"},
-		},
-		aid.WithYOLO(),
+	result, err := ExecuteForge(
+		"netscan",
+		"www.example.com",
+		aid.WithAgreeYOLO(),
 		aid.WithDebugPrompt(true),
 		aid.WithAiToolsSearchTool(),
-		aid.WithAICallback(aiforge.GetQwenAICallback("qwen3-30b-a3b")),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = result
+	spew.Dump(result)
 }

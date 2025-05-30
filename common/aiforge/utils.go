@@ -1,10 +1,15 @@
 package aiforge
 
 import (
-	"github.com/yaklang/yaklang/common/yakgrpc/ypb"
+	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/yaklang/yaklang/common/utils"
+	"github.com/yaklang/yaklang/common/yakgrpc/ypb"
 
 	"github.com/yaklang/yaklang/common/ai"
 	"github.com/yaklang/yaklang/common/ai/aid"
@@ -12,6 +17,54 @@ import (
 	"github.com/yaklang/yaklang/common/consts"
 	"github.com/yaklang/yaklang/common/log"
 )
+
+func MockAICallbackByRecord(content []byte) aid.AICallbackType {
+	var chatRecord []string
+	json.Unmarshal(content, &chatRecord)
+	currentPairId := 0
+	return func(config *aid.Config, req *aid.AIRequest) (*aid.AIResponse, error) {
+		rsp := config.NewAIResponse()
+		reqPrompt := chatRecord[currentPairId]
+		rspPrompt := chatRecord[currentPairId+1]
+		_ = reqPrompt
+		rsp.EmitOutputStream(strings.NewReader(rspPrompt))
+		currentPairId += 2
+		rsp.Close()
+		return rsp, nil
+	}
+}
+func AICallbackRecorder(callback aid.AICallbackType, fileName string) (aid.AICallbackType, func()) {
+	chatRecord := []string{}
+	saveToFile := func() {
+		f, err := os.Create(fileName)
+		if err != nil {
+			log.Errorf("aiCallbackRecorder: create file error: %v", err)
+			return
+		}
+		defer f.Close()
+		json.NewEncoder(f).Encode(chatRecord)
+	}
+	return func(config *aid.Config, req *aid.AIRequest) (*aid.AIResponse, error) {
+		rsp := config.NewAIResponse()
+		reader, writer := io.Pipe()
+		rsp.EmitOutputStream(reader)
+		go func() {
+			defer func() {
+				writer.Close()
+				rsp.Close()
+			}()
+			originRsp, err := callback(config, req)
+			if err != nil {
+				log.Errorf("aiCallbackRecorder: callback error: %v", err)
+			}
+			outputReader := originRsp.GetOutputStreamReader("output", false, config)
+			outputBuf := bytes.Buffer{}
+			io.Copy(&outputBuf, io.TeeReader(outputReader, writer))
+			chatRecord = append(chatRecord, req.GetPrompt(), outputBuf.String())
+		}()
+		return rsp, nil
+	}, saveToFile
+}
 
 func getTestSuiteAICallback(fileName string, opts []aispec.AIConfigOption, typeName string, modelName ...string) aid.AICallbackType {
 	var model string
@@ -123,4 +176,25 @@ func GetCliValueByKey(key string, items []*ypb.ExecParamItem) string {
 		}
 	}
 	return ""
+}
+
+func Any2ExecParams(i any) []*ypb.ExecParamItem {
+	// covert params to ypb.ExecParamItem
+	var params []*ypb.ExecParamItem
+	if p, ok := i.([]*ypb.ExecParamItem); ok {
+		return p
+	} else if utils.IsMap(i) {
+		for k, v := range utils.InterfaceToGeneralMap(i) {
+			params = append(params, &ypb.ExecParamItem{
+				Key:   k,
+				Value: utils.InterfaceToString(v),
+			})
+		}
+	} else {
+		params = append(params, &ypb.ExecParamItem{
+			Key:   "query",
+			Value: utils.InterfaceToString(i),
+		})
+	}
+	return params
 }

@@ -43,8 +43,9 @@ type Memory struct {
 	PlanHistory []*PlanRecord
 
 	// tools list
-	DisableTools bool
-	Tools        func() []*aitool.Tool
+	DisableTools          bool
+	Tools                 func() []*aitool.Tool
+	toolsKeywordsCallback func() []string
 
 	// tool call results
 	//toolCallResults []*aitool.ToolResult
@@ -53,6 +54,24 @@ type Memory struct {
 	InteractiveHistory *omap.OrderedMap[string, *InteractiveEventRecord]
 
 	timeline *memoryTimeline // timeline with tool call results, will reduce the memory size
+}
+
+func (m *Memory) CopyReducibleMemory() *Memory {
+	mem := &Memory{
+		PersistentData:        utils.CopySlice(m.PersistentData),
+		userData:              m.userData.Copy(),
+		DisableTools:          m.DisableTools,
+		Tools:                 m.Tools,
+		toolsKeywordsCallback: m.toolsKeywordsCallback,
+		InteractiveHistory:    m.InteractiveHistory.Copy(),
+
+		// task && plan is not reducible, remove it
+		CurrentTask: nil,
+		RootTask:    nil,
+		PlanHistory: nil,
+	}
+	mem.timeline = m.timeline.CopyReducibleTimelineWithMemory(mem)
+	return m
 }
 
 func GetDefaultMemory() *Memory {
@@ -66,6 +85,23 @@ func GetDefaultMemory() *Memory {
 		userData: omap.NewOrderedMap[string, string](make(map[string]string)),
 		timeline: newMemoryTimeline(10, nil),
 	}
+}
+
+func (m *Memory) BindCoordinator(c *Coordinator) {
+	config := c.config
+	m.StoreQuery(c.userInput)
+	m.StoreTools(func() []*aitool.Tool {
+		alltools, err := config.aiToolManager.GetEnableTools()
+		if err != nil {
+			log.Errorf("coordinator: get all tools failed: %v", err)
+			return nil
+		}
+		return alltools
+	})
+	m.StoreToolsKeywords(func() []string {
+		return config.keywords
+	})
+	m.timeline.BindConfig(config)
 }
 
 // user data memory api, user or ai can set and get
@@ -104,12 +140,26 @@ func (m *Memory) Schema() map[string]string {
 	for _, tool := range m.Tools() {
 		toolNames = append(toolNames, tool.Name)
 	}
-	return taskJSONSchema(toolNames)
+	return planJSONSchema(toolNames)
 }
 
 // set tools list
 func (m *Memory) StoreTools(toolList func() []*aitool.Tool) {
 	m.Tools = toolList
+}
+
+func (m *Memory) ClearRuntimeConfig() {
+	m.timeline.ai = nil
+	m.timeline.config = nil
+}
+
+// set tools list
+func (m *Memory) StoreToolsKeywords(keywords func() []string) {
+	m.toolsKeywordsCallback = keywords
+}
+
+func (m *Memory) ToolsKeywords() string {
+	return strings.Join(m.toolsKeywordsCallback(), ", ")
 }
 
 // user first input
@@ -131,6 +181,10 @@ func (m *Memory) StoreCurrentTask(task *aiTask) {
 }
 
 func (m *Memory) StoreAppendPersistentInfo(i ...string) {
+	if utils.IsNil(m) {
+		log.Warn("no memory instance found while calling `StoreAppendPersistentInfo`")
+		return
+	}
 	m.PersistentData = append(m.PersistentData, i...)
 }
 
@@ -163,11 +217,11 @@ func (m *Memory) PushToolCallResults(t *aitool.ToolResult) {
 	m.timeline.PushToolResult(t)
 }
 
-func (m *Memory) ToolCallTimeline() string {
+func (m *Memory) Timeline() string {
 	return m.timeline.Dump()
 }
 
-func (m *Memory) ToolCallTimelineWithout(n ...any) string {
+func (m *Memory) TimelineWithout(n ...any) string {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Errorf("error creating sub timeline: %v", r)
@@ -192,7 +246,7 @@ func (m *Memory) ToolCallTimelineWithout(n ...any) string {
 	return stl.Dump()
 }
 
-func (m *Memory) CurrentTaskToolCallTimeline() string {
+func (m *Memory) CurrentTaskTimeline() string {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Errorf("error creating sub timeline: %v", r)
@@ -200,7 +254,7 @@ func (m *Memory) CurrentTaskToolCallTimeline() string {
 		}
 	}()
 	if m.CurrentTask == nil {
-		return m.ToolCallTimeline()
+		return m.Timeline()
 	}
 	stl := m.timeline.CreateSubTimeline(m.CurrentTask.toolCallResultIds.Keys()...)
 	if stl == nil {
@@ -267,6 +321,24 @@ func (m *Memory) PersistentMemory() string {
 	return buf.String()
 }
 
+func (m *Memory) PlanHelp() string {
+	templateData := map[string]interface{}{
+		"Memory": m,
+	}
+	temp, err := template.New("plan_help").Parse(__prompt_PlanHelp)
+	if err != nil {
+		log.Errorf("error parsing plan help template: %v", err)
+		return ""
+	}
+	var promptBuilder strings.Builder
+	err = temp.Execute(&promptBuilder, templateData)
+	if err != nil {
+		log.Errorf("error executing plan help history template: %v", err)
+		return ""
+	}
+	return promptBuilder.String()
+}
+
 func (m *Memory) ToolsList() string {
 	if m.DisableTools {
 		return ""
@@ -293,6 +365,10 @@ func (m *Memory) CurrentTaskToolCallResults() []*aitool.ToolResult {
 }
 
 func (m *Memory) StoreCliParameter(param []*ypb.ExecParamItem) {
+	if utils.IsNil(m) {
+		log.Warnf("memory nil while calling StoreCliParameter")
+		return
+	}
 	for _, p := range param {
 		if p.Key == "" {
 			continue

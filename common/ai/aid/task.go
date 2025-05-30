@@ -6,10 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/yaklang/yaklang/common/log"
-	"github.com/yaklang/yaklang/common/utils/omap"
 	"strconv"
 	"strings"
+
+	"github.com/yaklang/yaklang/common/log"
+	"github.com/yaklang/yaklang/common/utils/omap"
 
 	"github.com/yaklang/yaklang/common/ai/aid/aitool"
 	"github.com/yaklang/yaklang/common/utils"
@@ -32,6 +33,7 @@ type TaskProgress struct {
 type aiTask struct {
 	config *Config
 
+	Index      string    `json:"index"`
 	Name       string    `json:"name"`
 	Goal       string    `json:"goal"`
 	ParentTask *aiTask   `json:"parent_task"`
@@ -44,7 +46,6 @@ type aiTask struct {
 
 	executing bool
 	executed  bool
-	rerun     bool
 
 	// runtime
 	//ToolCallResults   []*aitool.ToolResult `json:"tool_call_results"`
@@ -80,10 +81,12 @@ func (t aiTask) MarshalJSON() ([]byte, error) {
 
 	// 创建一个不包含AICallback的结构体
 	return json.Marshal(struct {
+		Index    string    `json:"index"`
 		Name     string    `json:"name"`
 		Goal     string    `json:"goal"`
 		Subtasks []*aiTask `json:"subtasks,omitempty"`
 	}{
+		Index:    t.Index,
 		Name:     t.Name,
 		Goal:     t.Goal,
 		Subtasks: t.Subtasks,
@@ -94,6 +97,7 @@ func (t aiTask) MarshalJSON() ([]byte, error) {
 func (t *aiTask) UnmarshalJSON(data []byte) error {
 	// 创建一个临时结构体，不包含AICallback
 	aux := struct {
+		Index    string    `json:"index"`
 		Name     string    `json:"name"`
 		Goal     string    `json:"goal"`
 		Subtasks []*aiTask `json:"subtasks,omitempty"`
@@ -103,6 +107,7 @@ func (t *aiTask) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
+	t.Index = aux.Index
 	t.Name = aux.Name
 	t.Goal = aux.Goal
 	t.Subtasks = aux.Subtasks
@@ -136,8 +141,69 @@ func ExtractNextPlanTaskFromRawResponse(c *Config, rawResponse string) ([]*aiTas
 	return nil, errors.New("no aiTask found in next-plans")
 }
 
+// _assignHierarchicalIndicesRecursive 递归地为任务及其子任务分配层级索引。
+// currentTask 是当前要处理的任务。
+// currentIndex 是为 currentTask 计算好的索引字符串 (例如 "1", "1-2", "1-2-3")。
+func _assignHierarchicalIndicesRecursive(currentTask *aiTask, currentIndex string) {
+	if currentTask == nil {
+		return
+	}
+	currentTask.Index = currentIndex
+
+	for i, subTask := range currentTask.Subtasks {
+		// 子任务的索引是父任务索引加上自己的序号 (1-based)
+		// 例如，如果父任务索引是 "1-2", 第一个子任务是 "1-2-1", 第二个是 "1-2-2"
+		subTaskIndex := fmt.Sprintf("%s-%d", currentIndex, i+1)
+		_assignHierarchicalIndicesRecursive(subTask, subTaskIndex)
+	}
+}
+
+// GenerateIndex 为任务树生成层级索引。
+// 调用此方法的任务 (a) 所在树的根节点索引将被设为 "1"。
+// 其子任务将相应地获得如 "1-1", "1-2" 等索引，孙任务如 "1-1-1" 等。
+func (a *aiTask) GenerateIndex() {
+	if a == nil {
+		return
+	}
+
+	root := a
+	// 向上遍历以找到树的实际根节点。
+	// 包含一个针对极深树或潜在循环依赖的安全中断。
+	for i := 0; i < 1000 && root.ParentTask != nil; i++ {
+		root = root.ParentTask
+	}
+
+	// 循环结束后，'root' 要么是真正的根节点 (ParentTask == nil)，
+	// 要么是经过1000次迭代后到达的节点。
+	// 从这个 'root' 开始进行索引。
+	// 根任务的索引被指定为 "1"。
+	_assignHierarchicalIndicesRecursive(root, "1")
+}
+
 // ExtractTaskFromRawResponse 从原始响应中提取Task
-func ExtractTaskFromRawResponse(c *Config, rawResponse string) (*aiTask, error) {
+func ExtractTaskFromRawResponse(c *Config, rawResponse string) (retTask *aiTask, err error) {
+	defer func() {
+		if retTask == nil {
+			return
+		}
+		// Ensure config is propagated to the new task and its subtasks
+		var propagateConfig func(task *aiTask)
+		propagateConfig = func(task *aiTask) {
+			if task == nil {
+				return
+			}
+			task.config = c
+			if task.toolCallResultIds == nil {
+				task.toolCallResultIds = omap.NewOrderedMap(make(map[int64]*aitool.ToolResult))
+			}
+			for _, sub := range task.Subtasks {
+				sub.ParentTask = task // Ensure parent is set
+				propagateConfig(sub)
+			}
+		}
+		propagateConfig(retTask)
+		retTask.GenerateIndex()
+	}()
 	var extraReason bytes.Buffer
 	_ = extraReason
 	for _, item := range jsonextractor.ExtractObjectIndexes(rawResponse) {
@@ -156,10 +222,9 @@ func ExtractTaskFromRawResponse(c *Config, rawResponse string) (*aiTask, error) 
 			} `json:"tasks"`
 		}
 
-		err := json.Unmarshal([]byte(taskJSON), &planObj)
+		err = json.Unmarshal([]byte(taskJSON), &planObj)
 		if err != nil {
-			fmt.Println(taskJSON)
-			log.Errorf("parse plan json failed, json unmarshal err, maybe some syntax in json?: %v", err)
+			log.Debugf("Failed to parse taskJSON as planObj structure: %v. JSON: %s", err, taskJSON)
 		}
 		if err == nil && planObj.Action == "plan" && len(planObj.Tasks) > 0 {
 			// 创建主任务
@@ -206,19 +271,29 @@ func ExtractTaskFromRawResponse(c *Config, rawResponse string) (*aiTask, error) 
 				}
 			}
 
-			return mainTask, nil
+			retTask = mainTask
+			err = nil
+			return
 		}
 
 		// 尝试直接解析为单个 aiTask 对象
 		var simpleTask aiTask
 		err = json.Unmarshal([]byte(taskJSON), &simpleTask)
+		if err != nil {
+			log.Debugf("Failed to parse taskJSON as simpleTask: %v. JSON: %s", err, taskJSON)
+		}
 		if err == nil && simpleTask.Name != "" {
-			return &simpleTask, nil
+			retTask = &simpleTask
+			err = nil
+			return
 		}
 
 		// 尝试解析为一个简单的 map 并创建 aiTask
 		var taskMap map[string]interface{}
 		err = json.Unmarshal([]byte(taskJSON), &taskMap)
+		if err != nil {
+			log.Debugf("Failed to parse taskJSON as taskMap: %v. JSON: %s", err, taskJSON)
+		}
 		if err == nil {
 			if name, ok := taskMap["name"].(string); ok && name != "" {
 				taskIns := &aiTask{
@@ -251,11 +326,15 @@ func ExtractTaskFromRawResponse(c *Config, rawResponse string) (*aiTask, error) 
 						}
 					}
 				}
-				return taskIns, nil
+				retTask = taskIns
+				err = nil
+				return
 			}
 		}
 	}
-	return nil, errors.New("no aiTask found")
+	err = errors.New("no aiTask found in raw response")
+	retTask = nil
+	return
 }
 
 func (t *aiTask) SingleLineStatusSummary() string {

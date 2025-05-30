@@ -204,8 +204,12 @@ func lineDisASM(v Instruction, liner DisasmLiner) (ret string) {
 		return fmt.Sprintf("assert(%s, %s)", liner.DisasmValue(v.Cond), liner.DisasmValue(v.MsgValue))
 	case *Panic:
 		return fmt.Sprintf("panic(%s)", liner.DisasmValue(v.Info))
-	case *Jump, *ErrorHandler:
+	case *Jump:
 		return "jump"
+	case *ErrorHandler:
+		return "error-handler"
+	case *ErrorCatch:
+		return fmt.Sprintf("error-catch(%s)", liner.DisasmValue(v.Exception))
 	case *If:
 		return fmt.Sprintf("if (%s)", liner.DisasmValue(v.Cond))
 	case *Loop:

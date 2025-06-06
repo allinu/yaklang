@@ -52,6 +52,10 @@ const (
 	// NativeCall_GetMembers is used to get the members of a value
 	NativeCall_GetMembers = "getMembers"
 
+	// NativeCall_GetMemberByKey is used to get the members of a value by key
+	// example: <getMemberByKey(key="")>
+	NativeCall_GetMemberByKey = "getMemberByKey"
+
 	// NativeCall_GetSiblings is used to get the siblings of a value
 	NativeCall_GetSiblings = "getSiblings"
 
@@ -114,8 +118,8 @@ const (
 	// NativeCall_ScanNext is used to scan next
 	NativeCall_ScanNext = "scanNext"
 
-	//NatiCall_ScanCurrent is used to scan current block
-	NatiCall_ScanCurrent = "scanCurrent"
+	//NativeCall_ScanInstruction is used to scan current block's instruction
+	NativeCall_ScanInstruction = "scanInstruction"
 
 	//NativeCall_DeleteVariable is used to delete a variable
 	NativeCall_DeleteVariable = "delete"
@@ -340,6 +344,7 @@ func init() {
 		return true, result, nil
 	}), nc_desc("获取实际参数"))
 	registerNativeCall(NativeCall_GetUsers, nc_func(func(v sfvm.ValueOperator, frame *sfvm.SFFrame, params *sfvm.NativeCallActualParams) (bool, sfvm.ValueOperator, error) {
+		depth := params.GetInt(0, "depth")
 		var result []sfvm.ValueOperator
 		v.Recursive(func(operator sfvm.ValueOperator) error {
 			switch ret := operator.(type) {
@@ -350,6 +355,29 @@ func init() {
 			}
 			return nil
 		})
+		if depth > 0 {
+			depth--
+		}
+
+		for ; depth > 0; depth-- {
+			var temp []sfvm.ValueOperator
+			for _, v := range result {
+				switch ret := v.(type) {
+				case *Value:
+					temp = append(temp, ret.GetUsers())
+				case Values:
+					temp = append(temp, ret.GetUsers())
+				case *sfvm.ValueList:
+					values, err := SFValueListToValues(ret)
+					if err == nil {
+						values.ForEach(func(value *Value) {
+							temp = append(temp, value.GetUsers())
+						})
+					}
+				}
+			}
+			result = temp
+		}
 		if len(result) > 0 {
 			return true, sfvm.NewValues(result), nil
 		}
@@ -796,7 +824,7 @@ func init() {
 	}))
 	registerNativeCall(NativeCall_ScanNext, nc_func(nativeCallScan(Next)))
 	registerNativeCall(NativeCall_ScanPrevious, nc_func(nativeCallScan(Previous)))
-	registerNativeCall(NatiCall_ScanCurrent, nc_func(nativeCallScan(Current)))
+	registerNativeCall(NativeCall_ScanInstruction, nc_func(nativeCallScan(Current)))
 	registerNativeCall(NativeCall_SourceCode, nc_func(nativeCallSourceCode))
 	registerNativeCall(NativeCall_OpCodes, nc_func(nativeCallOpCodes))
 
@@ -1184,6 +1212,34 @@ func init() {
 		}),
 		nc_desc("获取输入指令的成员指令，一般说的是如果这个指令是一个对象，可以通过这个指令获取这个对象的成员。"),
 	)
+
+	registerNativeCall(
+		NativeCall_GetMemberByKey,
+		nc_func(func(v sfvm.ValueOperator, frame *sfvm.SFFrame, actualParams *sfvm.NativeCallActualParams) (bool, sfvm.ValueOperator, error) {
+			var rets []sfvm.ValueOperator
+			key := actualParams.GetString(0, "key")
+
+			v.Recursive(func(operator sfvm.ValueOperator) error {
+				val, ok := operator.(*Value)
+				if !ok {
+					return nil
+				}
+
+				if ret, ok := val.GetMembersByString(key); ok {
+					ret.AppendPredecessor(val, frame.WithPredecessorContext("getMemberByKey"))
+					rets = append(rets, ret)
+				}
+
+				return nil
+			})
+			if len(rets) > 0 {
+				return true, sfvm.NewValues(rets), nil
+			}
+			return false, nil, utils.Error("no value(members) found")
+		}),
+		nc_desc("获取输入指令的成员指令，一般说的是如果这个指令是一个对象，可以通过这个指令获取这个对象的某个特定的成员。"),
+	)
+
 	registerNativeCall(
 		NativeCall_GetObject,
 		nc_func(func(v sfvm.ValueOperator, frame *sfvm.SFFrame, actualParams *sfvm.NativeCallActualParams) (bool, sfvm.ValueOperator, error) {

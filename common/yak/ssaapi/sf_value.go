@@ -105,7 +105,7 @@ func (v *Value) CompareString(items *sfvm.StringComparator) (sfvm.ValueOperator,
 	names := getValueNames(v)
 	fmt.Println("names", names)
 	names = append(names, yakunquote.TryUnquote(v.String()))
-	return nil, []bool{items.Matches(names...)}
+	return v, []bool{items.Matches(names...)}
 }
 
 func (v *Value) CompareConst(comparator *sfvm.ConstComparator) []bool {
@@ -126,7 +126,7 @@ func (v *Value) CompareOpcode(comparator *sfvm.OpcodeComparator) (sfvm.ValueOper
 		ops := []string{v.GetBinaryOperator(), v.GetUnaryOperator()}
 		return slices.Contains(ops, binOp)
 	}
-	return nil, []bool{comparator.AllSatisfy(checkOp, checkBinOrUnaryOp)}
+	return v, []bool{comparator.AllSatisfy(checkOp, checkBinOrUnaryOp)}
 }
 
 func (v *Value) Remove(sf ...sfvm.ValueOperator) (sfvm.ValueOperator, error) {
@@ -194,12 +194,15 @@ func (v *Value) GetFields() (sfvm.ValueOperator, error) {
 	return sfvm.NewEmptyValues(), nil
 }
 
-func (v *Value) GetMembersByString(key string) (sfvm.ValueOperator, error) {
+func (v *Value) GetMembersByString(key string) (sfvm.ValueOperator, bool) {
 	if v.IsMap() || v.IsList() || v.IsObject() {
-		return v.GetMember(v.NewValue(ssa.NewConst(key))), nil
+		if m := v.GetMember(v.NewValue(ssa.NewConst(key))); m != nil {
+			return m, true
+		}
+		return nil, false
 	}
 	// return v.GetUsers(), nil
-	return nil, nil
+	return nil, false
 }
 
 func (v *Value) GetSyntaxFlowUse() (sfvm.ValueOperator, error) {

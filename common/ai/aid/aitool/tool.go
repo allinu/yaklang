@@ -1,7 +1,6 @@
 package aitool
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,12 +15,7 @@ import (
 
 // InvokeCallback 定义工具调用回调函数的签名
 type InvokeCallback func(params InvokeParams, stdout io.Writer, stderr io.Writer) (any, error)
-type ChatToAiFuncType func(msg string) (io.Reader, error)
-type ToolInvokeCtx struct {
-	Ctx          context.Context
-	ChatToAiFunc ChatToAiFuncType
-}
-type InvokeCallbackWithCtx func(ctx *ToolInvokeCtx, params InvokeParams, stdout io.Writer, stderr io.Writer) (any, error)
+
 type Tool struct {
 	*mcp.Tool
 	// A list of keywords for tool indexing and searching.
@@ -166,6 +160,14 @@ func WithParam_Title(title string) PropertyOption {
 func WithParam_Enum(values ...any) PropertyOption {
 	return func(schema map[string]any) {
 		schema["enum"] = values
+	}
+}
+
+// WithParam_Enum specifies a list of allowed values for a string property.
+// The property value must be one of the specified enum values.
+func WithParam_Const(values ...any) PropertyOption {
+	return func(schema map[string]any) {
+		schema["const"] = values
 	}
 }
 
@@ -442,8 +444,31 @@ func WithRawParam(name string, object map[string]any, opts ...PropertyOption) To
 	}
 }
 
+func (t *Tool) GetName() string {
+	return t.Name
+}
+
+func (t *Tool) GetDescription() string {
+	return t.Description
+}
+
+func (t *Tool) GetKeywords() []string {
+	return t.Keywords
+}
+
 func (t *Tool) Params() map[string]any {
 	return t.Tool.InputSchema.Properties
+}
+
+func (t *Tool) ParamsJsonSchemaString() string {
+	schema := t.Params()
+
+	jsonBytes, err := json.MarshalIndent(schema, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	return string(jsonBytes)
 }
 
 // ToJSONSchema 将整个Tool转换为符合JSON Schema Draft-07规范的格式
@@ -475,12 +500,17 @@ func (t *Tool) ToJSONSchema() map[string]any {
 		}
 	}
 
+	finalRequires := []string{"tool", "@action"}
+	if _, ok := properties["params"]; ok {
+		finalRequires = append(finalRequires, "params")
+	}
+
 	// 构建最终的JSON Schema
 	schema := map[string]any{
 		"$schema":              "http://json-schema.org/draft-07/schema#",
 		"type":                 "object",
 		"properties":           properties,
-		"required":             []string{"tool", "@action"},
+		"required":             []string{"tool", "@action", "params"},
 		"additionalProperties": false,
 	}
 

@@ -17,10 +17,11 @@ const (
 	LoopLatch     = "loop.latch"     // third // latch
 
 	// if
-	IfDone  = "if.done"
-	IfTrue  = "if.true"
-	IfFalse = "if.false"
-	IfElif  = "if.elif"
+	IfCondition = "if.condition"
+	IfDone      = "if.done"
+	IfTrue      = "if.true"
+	IfFalse     = "if.false"
+	IfElif      = "if.elif"
 
 	// try-catch
 	TryStart   = "error.try"
@@ -315,7 +316,7 @@ func (i *IfBuilder) Build() *IfBuilder {
 	// DoneBlock.ScopeTable = Scope
 
 	// create if-condition block and jump to it
-	conditionBlock := SSABuilder.NewBasicBlock("if-condition")
+	conditionBlock := SSABuilder.NewBasicBlock(IfCondition)
 	SSABuilder.EmitJump(conditionBlock)
 	SSABuilder.CurrentBlock = conditionBlock
 
@@ -398,8 +399,9 @@ func (i *IfBuilder) Build() *IfBuilder {
 }
 
 type tryCatchItem struct {
-	err       func() string
-	catchBody func()
+	exceptionParameter         func() string
+	exceptionParameterCallBack func(Value)
+	catchBody                  func()
 }
 
 type TryBuilder struct {
@@ -426,10 +428,23 @@ func (t *TryBuilder) BuildTryBlock(f func()) {
 	t.buildTry = f
 }
 
-func (t *TryBuilder) BuildErrorCatch(err func() string, catch func()) {
+func defaultExceptionParameterType(v Value) {
+	v.SetType(BasicTypes[ErrorTypeKind])
+}
+
+func (t *TryBuilder) BuildErrorCatch(
+	err func() string, catch func(),
+	callBacks ...func(Value),
+) {
+	errType := defaultExceptionParameterType
+	if len(callBacks) > 0 {
+		errType = callBacks[0]
+	}
+
 	t.buildCatchItem = append(t.buildCatchItem, tryCatchItem{
-		err:       err,
-		catchBody: catch,
+		exceptionParameter:         err,
+		exceptionParameterCallBack: errType,
+		catchBody:                  catch,
 	})
 }
 
@@ -446,6 +461,7 @@ func (t *TryBuilder) Finish() {
 
 	builder.CurrentBlock = t.enter
 	tryBlock := builder.NewBasicBlock(TryStart)
+	enterTryBlock := tryBlock
 	errorHandler := builder.EmitErrorHandler(tryBlock)
 
 	// build try
@@ -459,18 +475,28 @@ func (t *TryBuilder) Finish() {
 
 	// build catch
 	for _, item := range t.buildCatchItem {
+		// catch block
 		catchBody := builder.NewBasicBlock(TryCatch)
-		errorHandler.AddCatch(catchBody)
+
+		// catch exception
+		id := item.exceptionParameter()
+
+		builder.CurrentBlock = enterTryBlock
+		exception := builder.EmitUndefined(id)
+		exception.Kind = UndefinedValueValid
+		item.exceptionParameterCallBack(exception)
+
+		// add instruction
+		builder.EmitErrorCatch(errorHandler, catchBody, exception)
+
+		// switch to catch bo dy
 		builder.CurrentBlock = catchBody
+		// add scope and callback
 		tryBuilder.AddCache(func(svti ssautil.ScopedVersionedTableIF[Value]) ssautil.ScopedVersionedTableIF[Value] {
 			builder.CurrentBlock.SetScope(svti)
+			variable := builder.CreateLocalVariable(id)
+			builder.AssignVariable(variable, exception)
 			// error variable
-			if id := item.err(); id != "" {
-				p := NewParam(id, false, builder)
-				p.SetType(BasicTypes[ErrorTypeKind])
-				variable := builder.CreateLocalVariable(id)
-				builder.AssignVariable(variable, p)
-			}
 			// catch body
 			if item.catchBody != nil {
 				item.catchBody()
@@ -510,8 +536,8 @@ func (t *TryBuilder) Finish() {
 
 	builder.CurrentBlock = tryBlock
 	builder.EmitJump(target)
-	for _, catch := range errorHandler.catchs {
-		builder.CurrentBlock = catch
+	for _, catch := range errorHandler.Catch {
+		builder.CurrentBlock = catch.GetBlock()
 		builder.EmitJump(target)
 	}
 
@@ -854,8 +880,10 @@ func (b *FunctionBuilder) HandlerReturnPhi(s ssautil.ScopedVersionedTableIF[Valu
 		if _, ok := ToFunction(value); ok { // 忽略function
 			continue
 		}
-
 		if _, ok := ToExternLib(value); ok { // 忽略import value
+			continue
+		}
+		if value.GetType().GetTypeKind() == ErrorTypeKind {
 			continue
 		}
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/yaklang/yaklang/common/aireducer"
 	"io"
 	"os"
 	"path/filepath"
@@ -30,7 +31,6 @@ import (
 	"github.com/yaklang/yaklang/common/yakgrpc/ypb"
 
 	"github.com/davecgh/go-spew/spew"
-	"github.com/yaklang/yaklang/common/ai/openai"
 	"github.com/yaklang/yaklang/common/authhack"
 	"github.com/yaklang/yaklang/common/chaosmaker"
 	"github.com/yaklang/yaklang/common/crawler"
@@ -285,9 +285,6 @@ func initYaklangLib() {
 	yaklang.Import("cve", cve.CVEExports)
 	yaklang.Import("cwe", cve.CWEExports)
 
-	// openai
-	yaklang.Import("openai", openai.Exports)
-
 	// suricata
 	yaklang.Import("suricata", chaosmaker.ChaosMakerExports)
 	yaklang.Import("pcapx", pcapx.Exports)
@@ -314,6 +311,10 @@ func initYaklangLib() {
 	yaklang.Import("sandbox", SandboxExports)
 
 	yaklang.Import("ai", ai.Exports)
+
+	yaklang.Import("aiagent", AIAgentExport)
+
+	yaklang.Import("aireducer", aireducer.Exports)
 
 	// pprof utils
 	yaklang.Import("pprof", pprofutils.Exports)
@@ -440,6 +441,9 @@ func (e *ScriptEngine) RegisterEngineHooks(f func(engine *antlr4yak.Engine) erro
 }
 
 func (e *ScriptEngine) SetYakitClient(client *yaklib.YakitClient) {
+	if client == nil {
+		return
+	}
 	e.client = client
 	e.RegisterEngineHooks(func(engine *antlr4yak.Engine) error {
 		client.SetYakLog(*e.logger)

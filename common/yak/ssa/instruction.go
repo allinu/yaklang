@@ -130,13 +130,21 @@ func NewNext(iter Value, isIn bool) *Next {
 func NewErrorHandler(try *BasicBlock) *ErrorHandler {
 	e := &ErrorHandler{
 		anInstruction: NewInstruction(),
-		try:           try,
+		Try:           try,
 	}
 	try.Handler = e
 	return e
 }
-func (e *ErrorHandler) AddCatch(c *BasicBlock) {
-	e.catchs = append(e.catchs, c)
+
+func NewErrorCatch(try *ErrorHandler, catch *BasicBlock, exception Value) *ErrorCatch {
+	e := &ErrorCatch{
+		anValue:   NewValue(),
+		CatchBody: catch,
+		Exception: exception,
+	}
+	catch.Handler = try
+	try.Catch = append(try.Catch, e)
+	return e
 }
 
 func NewExternLib(variable string, builder *FunctionBuilder, table map[string]any) *ExternLib {
@@ -295,11 +303,11 @@ func (l *Loop) Finish(init, step []Value) {
 }
 
 func (e *ErrorHandler) AddFinal(f *BasicBlock) {
-	e.final = f
+	e.Final = f
 	f.Handler = e
 }
 
 func (e *ErrorHandler) AddDone(d *BasicBlock) {
-	e.done = d
+	e.Done = d
 	d.Handler = e
 }

@@ -6,6 +6,7 @@ import (
 	"github.com/yaklang/yaklang/common/log"
 	"github.com/yaklang/yaklang/common/utils"
 	"io"
+	"sync/atomic"
 	"text/template"
 )
 
@@ -21,7 +22,13 @@ func (t *aiTask) execute() error {
 	t.config.EmitPrompt("task_execute", prompt)
 
 	var response string
-	err = t.config.callAiTransaction(prompt, t.callAI, func(rsp *AIResponse) error {
+	var action *Action
+	var directlyAnswer string
+	var directlyAnswerLong string
+	err = t.config.callAiTransaction(prompt, func(request *AIRequest) (*AIResponse, error) {
+		request.SetTaskIndex(t.Index)
+		return t.callAI(request)
+	}, func(rsp *AIResponse) error {
 		responseBytes, err := io.ReadAll(rsp.GetOutputStreamReader("execute", false, t.config))
 		if err != nil {
 			return fmt.Errorf("error reading AI response: %w", err)
@@ -30,6 +37,31 @@ func (t *aiTask) execute() error {
 		if len(response) <= 0 {
 			return utils.Errorf("AI response is empty, retry it or check your AI model")
 		}
+
+		action, err = ExtractAction(response, "direct-answer", `require-tool`)
+		if err != nil {
+			return utils.Errorf("error extracting action (direct-answer/require-tool): %w", err)
+		}
+
+		if action.GetString("@action") == "direct-answer" {
+			// 直接回答的情况
+			directlyAnswer = action.GetString("direct_answer")
+			if directlyAnswer == "" {
+				return utils.Errorf("error: direct answer is empty, retry it until direct answer finished")
+			}
+			t.config.ProcessExtendedActionCallback(directlyAnswer)
+			directlyAnswerLong = action.GetString("direct_answer_long")
+			if directlyAnswerLong == "" {
+				log.Errorf("error: direct answer long is empty, retry it until direct answer finished")
+			}
+			t.config.EmitInfo("task[%v] finished, directly answer: %v", t.Name, directlyAnswer)
+		} else if action.GetString("@action") == "require-tool" {
+			toolName := action.GetString("tool")
+			if toolName == "" {
+				return utils.Errorf("error: tool name is empty, retry it until tool name finished")
+			}
+		}
+
 		return nil
 	})
 	if err != nil {
@@ -37,6 +69,7 @@ func (t *aiTask) execute() error {
 	}
 
 	// 处理工具调用, 直到没有工具调用为止
+	toolCallCount := new(int64)
 TOOLREQUIRED:
 	for {
 		toolRequired := t.getToolRequired(response)
@@ -45,6 +78,8 @@ TOOLREQUIRED:
 			break
 		}
 
+		atomic.AddInt64(toolCallCount, 1)
+
 		targetTool := toolRequired[0]
 		result, err := t.callTool(targetTool)
 		if err != nil {
@@ -52,7 +87,7 @@ TOOLREQUIRED:
 			return err
 		}
 		if !targetTool.NoNeedTimelineRecorded {
-			result.ID = t.config.idGenerator()
+			result.ID = t.config.AcquireId()
 			t.PushToolCallResult(result)
 		}
 
@@ -92,6 +127,12 @@ TOOLREQUIRED:
 			t.config.EmitError("unknown action: %v, skip tool require", action)
 			break TOOLREQUIRED
 		}
+	}
+
+	if directlyAnswer != "" {
+		t.TaskSummary = directlyAnswer
+		t.ShortSummary = directlyAnswer
+		t.LongSummary = directlyAnswer
 	}
 
 	if t.TaskSummary == "" {

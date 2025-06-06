@@ -19,9 +19,35 @@ import (
 )
 
 type timelineItem struct {
-	*aitool.ToolResult
 	deleted bool
+
+	value TimelineItemValue // *aitool.ToolResult
 }
+
+func (item *timelineItem) GetShrinkResult() string {
+	return item.value.GetShrinkResult()
+}
+
+func (item *timelineItem) GetShrinkSimilarResult() string {
+	return item.value.GetShrinkSimilarResult()
+}
+
+func (item *timelineItem) String() string {
+	return item.value.String()
+}
+
+func (item *timelineItem) SetShrinkResult(pers string) {
+	item.value.SetShrinkResult(pers)
+}
+
+func (item *timelineItem) GetID() int64 {
+	if item.value == nil {
+		return 0
+	}
+	return item.value.GetID()
+}
+
+var _ TimelineItemValue = (*timelineItem)(nil)
 
 type memoryTimeline struct {
 	memory *Memory
@@ -44,6 +70,23 @@ type memoryTimeline struct {
 	totalDumpContentLimit int
 }
 
+func (m *memoryTimeline) CopyReducibleTimelineWithMemory(mem *Memory) *memoryTimeline {
+	tl := &memoryTimeline{
+		memory:                mem,
+		config:                m.config,
+		idToTs:                m.idToTs.Copy(),
+		tsToTimelineItem:      m.tsToTimelineItem.Copy(),
+		idToTimelineItem:      m.idToTimelineItem.Copy(),
+		summary:               m.summary.Copy(),
+		reducers:              m.reducers.Copy(),
+		maxTimelineLimit:      m.maxTimelineLimit,
+		fullMemoryCount:       m.fullMemoryCount,
+		perDumpContentLimit:   m.perDumpContentLimit,
+		totalDumpContentLimit: m.totalDumpContentLimit,
+	}
+	return tl
+}
+
 func (m *memoryTimeline) SoftDelete(id ...int64) {
 	for _, i := range id {
 		if v, ok := m.idToTimelineItem.Get(i); ok {
@@ -51,8 +94,8 @@ func (m *memoryTimeline) SoftDelete(id ...int64) {
 		}
 		if v, ok := m.summary.Get(i); ok {
 			v.Push(&timelineItem{
-				ToolResult: v.Value().ToolResult,
-				deleted:    true,
+				value:   v.Value().value,
+				deleted: true,
 			})
 		}
 	}
@@ -95,8 +138,11 @@ func (m *memoryTimeline) CreateSubTimeline(ids ...int64) *memoryTimeline {
 func (m *memoryTimeline) BindConfig(config *Config) {
 	m.config = config
 	m.memory = config.memory
-	m.setTimelineLimit(config.timelineLimit)
-	m.setTimelineContentLimit(config.timelineContentLimit)
+	if m.memory == nil {
+		m.memory = GetDefaultMemory()
+	}
+	m.setTimelineLimit(config.timelineRecordLimit)
+	m.setTimelineContentLimit(config.timelineContentSizeLimit)
 	if utils.IsNil(m.ai) {
 		m.setAICaller(config)
 	}
@@ -137,7 +183,7 @@ func (m *memoryTimeline) PushToolResult(toolResult *aitool.ToolResult) {
 	m.idToTs.Set(toolResult.GetID(), ts)
 
 	item := &timelineItem{
-		ToolResult: toolResult,
+		value: toolResult,
 	}
 
 	// if item dump string > perDumpContentLimit should shrink this item
@@ -151,6 +197,33 @@ func (m *memoryTimeline) PushToolResult(toolResult *aitool.ToolResult) {
 	m.dumpSizeCheck()
 }
 
+func (m *memoryTimeline) PushUserInteraction(stage UserInteractionStage, id int64, systemPrompt string, userExtraPrompt string) {
+	ts := time.Now().UnixMilli()
+	if m.tsToTimelineItem.Have(ts) {
+		time.Sleep(time.Millisecond * 10)
+		ts = time.Now().UnixMilli()
+	}
+	m.idToTs.Set(id, ts)
+
+	item := &timelineItem{
+		value: &UserInteraction{
+			ID:              id,
+			SystemPrompt:    systemPrompt,
+			UserExtraPrompt: userExtraPrompt,
+			Stage:           stage,
+		},
+	}
+
+	if m.perDumpContentLimit > 0 && len(item.String()) > m.perDumpContentLimit {
+		m.shrink(item)
+	}
+
+	m.tsToTimelineItem.Set(ts, item)
+	m.idToTimelineItem.Set(id, item)
+	m.timelineLengthCheck()
+	m.dumpSizeCheck()
+}
+
 func (m *memoryTimeline) timelineLengthCheck() {
 	total := m.idToTimelineItem.Len()
 	summaryCount := m.summary.Len()
@@ -158,15 +231,16 @@ func (m *memoryTimeline) timelineLengthCheck() {
 		shrinkTargetIndex := total - m.fullMemoryCount - 1
 		id := m.idToTimelineItem.Index(shrinkTargetIndex)
 		for _, v := range id.Values() {
-			log.Infof("start to shrink memory timeline id: %v, total: %v, summary: %v, size: %v", v.GetID(), total, summaryCount, m.fullMemoryCount)
+			log.Infof("start to shrink memory timeline id: %v, total: %v, summary: %v, size: %v", v.value.GetID(), total, summaryCount, m.fullMemoryCount)
 			m.shrink(v)
 		}
 	}
 
 	if m.maxTimelineLimit > 0 && total-m.maxTimelineLimit > 0 {
 		endIdx := total - m.maxTimelineLimit - 1
-		val, ok := m.idToTimelineItem.GetByIndex(endIdx)
+		rawValue, ok := m.idToTimelineItem.GetByIndex(endIdx)
 		if ok {
+			val := rawValue.value
 			log.Infof("start to reducer from id: %v, total: %v, limit: %v, delta: %v", val.GetID(), total, m.maxTimelineLimit, total-m.maxTimelineLimit)
 			m.reducer(val.GetID())
 		}
@@ -189,7 +263,7 @@ func (m *memoryTimeline) dumpSizeCheck() {
 	if totalLastID > summaryLastID {
 		m.idToTimelineItem.ForEach(func(k int64, v *timelineItem) bool {
 			if k > summaryLastID {
-				log.Infof("start to shrink memory timeline id: %v", v.GetID())
+				log.Infof("start to shrink memory timeline id: %v", v.value.GetID())
 				m.shrink(v)
 				return false
 			}
@@ -202,7 +276,7 @@ func (m *memoryTimeline) dumpSizeCheck() {
 		}
 		m.idToTimelineItem.ForEach(func(k int64, v *timelineItem) bool {
 			if k > reducerID {
-				log.Infof("start to shrink memory timeline id: %v", v.GetID())
+				log.Infof("start to shrink memory timeline id: %v", v.value.GetID())
 				m.reducer(k)
 				return false
 			}
@@ -220,34 +294,43 @@ func (m *memoryTimeline) reducer(beforeId int64) {
 	if utils.IsNil(m.ai) {
 		return
 	}
-	response, err := m.ai.callAI(NewAIRequest(pmt))
-	if err != nil {
-		log.Errorf("reducer call ai failed: %v", err)
-		return
-	}
-	var r io.Reader
+
 	if m.config == nil {
-		r = response.GetUnboundStreamReader(false)
+		CallAITransactionWithoutConfig(pmt, m.ai.callAI, func(response *AIResponse) error {
+			action, err := ExtractActionFromStream(response.GetUnboundStreamReader(false), "timeline-reducer")
+			if err != nil {
+				log.Errorf("extract timeline action failed: %v", err)
+				return utils.Errorf("extract timeline-reducer failed: %v", err)
+			}
+			pers := action.GetString("reducer_memory")
+			if pers != "" {
+				if lt, ok := m.reducers.Get(beforeId); ok {
+					lt.Push(pers)
+				} else {
+					m.reducers.Set(beforeId, linktable.NewUnlimitedStringLinkTable(pers))
+				}
+			}
+			return nil
+		})
 	} else {
-		r = response.GetOutputStreamReader("memory-reducer", true, m.config)
-	}
-	output, err := io.ReadAll(r)
-	if err != nil {
-		log.Errorf("read ai output failed: %v", err)
-		return
-	}
-	action, err := ExtractAction(string(output), "timeline-reducer")
-	if err != nil {
-		log.Errorf("extract timeline action failed: %v", err)
-		return
-	}
-	pers := action.GetString("reducer_memory")
-	if pers != "" {
-		if lt, ok := m.reducers.Get(beforeId); ok {
-			lt.Push(pers)
-		} else {
-			m.reducers.Set(beforeId, linktable.NewUnlimitedStringLinkTable(pers))
-		}
+		m.config.callAiTransaction(pmt, m.ai.callAI, func(response *AIResponse) error {
+			action, err := ExtractActionFromStream(
+				response.GetOutputStreamReader("memory-reducer", true, m.config),
+				"timeline-reducer",
+			)
+			if err != nil {
+				return utils.Errorf("extract timeline action failed: %v", err)
+			}
+			pers := action.GetString("reducer_memory")
+			if pers != "" {
+				if lt, ok := m.reducers.Get(beforeId); ok {
+					lt.Push(pers)
+				} else {
+					m.reducers.Set(beforeId, linktable.NewUnlimitedStringLinkTable(pers))
+				}
+			}
+			return nil
+		})
 	}
 }
 
@@ -282,15 +365,16 @@ func (m *memoryTimeline) shrink(currentItem *timelineItem) {
 	if pers == "" {
 		s, ok := m.summary.Get(currentItem.GetID())
 		if ok {
-			pers = s.Value().ShrinkResult
+			pers = s.Value().GetShrinkResult()
 			if pers == "" {
-				pers = s.Value().ShrinkSimilarResult
+				pers = s.Value().GetShrinkSimilarResult()
 			}
 		}
 	}
 	newItem := *currentItem //  copy struct
 	newItem.deleted = action.GetBool("should_drop", currentItem.deleted)
-	newItem.ShrinkResult = pers
+	//newItem.ShrinkResult = pers
+	newItem.SetShrinkResult(pers)
 	if lt, ok := m.summary.Get(currentItem.GetID()); ok {
 		lt.Push(&newItem)
 	} else {
@@ -305,13 +389,15 @@ func (m *memoryTimeline) renderReducerPrompt(beforeId int64) string {
 	input := m.DumpBefore(beforeId)
 	ins, err := template.New("timeline-reducer").Parse(timelineReducer)
 	if err != nil {
-		log.Warnf("BUG: dump summary prompt failed: %v", err)
+		log.Errorf("BUG: dump summary prompt failed: %v", err)
 		return ""
 	}
 	var buf bytes.Buffer
+	var nonce = utils.RandStringBytes(6)
 	err = ins.Execute(&buf, map[string]any{
 		"Memory": m.memory,
 		"Input":  input,
+		`NONCE`:  nonce,
 	})
 	if err != nil {
 		log.Errorf("BUG: dump summary prompt failed: %v", err)
@@ -330,9 +416,11 @@ func (m *memoryTimeline) renderSummaryPrompt(result *timelineItem) string {
 		return ""
 	}
 	var buf bytes.Buffer
+	var nonce = strings.ToLower(utils.RandStringBytes(6))
 	err = ins.Execute(&buf, map[string]any{
 		"Memory": m.memory,
 		"Input":  result.String(),
+		"NONCE":  nonce,
 	})
 	if err != nil {
 		log.Errorf("BUG: dump summary prompt failed: %v", err)
@@ -346,7 +434,7 @@ func (m *memoryTimeline) Dump() string {
 	if ok {
 		return m.DumpBefore(k)
 	}
-	return "no timeline generated in Dump"
+	return ""
 }
 
 func (m *memoryTimeline) DumpBefore(id int64) string {
@@ -361,6 +449,7 @@ func (m *memoryTimeline) DumpBefore(id int64) string {
 		initOnce.Do(func() {
 			buf.WriteString("timeline:\n")
 		})
+
 		if item.GetID() > id {
 			return true
 		}
@@ -386,7 +475,7 @@ func (m *memoryTimeline) DumpBefore(id int64) string {
 		if shrinkStartId > 0 && item.GetID() <= shrinkStartId {
 			val, ok := m.summary.Get(shrinkStartId)
 			if ok && !val.Value().deleted {
-				buf.WriteString(fmt.Sprintf("├─[%s] id: %v memory: %v\n", timeStr, item.GetID(), val.Value().ShrinkResult))
+				buf.WriteString(fmt.Sprintf("├─[%s] id: %v memory: %v\n", timeStr, item.GetID(), val.Value().GetShrinkResult()))
 			}
 			return true
 		}

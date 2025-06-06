@@ -7,12 +7,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/yaklang/yaklang/common/utils/bufpipe"
 	"io"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/yaklang/yaklang/common/utils/bufpipe"
 
 	"github.com/google/uuid"
 	"github.com/yaklang/yaklang/common/gmsm/sm4"
@@ -52,6 +53,7 @@ func (s *Server) SetCurrentProject(ctx context.Context, req *ypb.SetCurrentProje
 		default:
 			return nil, utils.Errorf("invalid project type: %s", req.GetType())
 		}
+		return &ypb.Empty{}, nil
 	}
 
 	db := s.GetProfileDatabase()
@@ -73,15 +75,7 @@ func (s *Server) SetCurrentProject(ctx context.Context, req *ypb.SetCurrentProje
 		if err != nil {
 			log.Errorf("init db failed: %s", err)
 		}
-		return &ypb.Empty{}, nil
-	}
-	// 不是默认数据库 不需要生成文件
-	if !CheckDefault(proj.ProjectName, proj.Type, proj.FolderID, proj.ChildFolderID) {
-		old, err := os.Open(proj.DatabasePath)
-		if err != nil {
-			return nil, utils.Errorf("can't open local database: %s", err)
-		}
-		old.Close()
+		return &ypb.Empty{}, err
 	}
 
 	path := proj.DatabasePath
@@ -89,12 +83,13 @@ func (s *Server) SetCurrentProject(ctx context.Context, req *ypb.SetCurrentProje
 	switch req.GetType() {
 	case yakit.TypeProject:
 		consts.SetDefaultYakitProjectDatabaseName(path)
-		consts.SetGormProjectDatabase(path)
+		err = consts.SetGormProjectDatabase(path)
 	case yakit.TypeSSAProject:
-		consts.SetSSAProjectDatabasePath(path)
-		consts.SetGormSSAProjectDatabaseByPath(path)
+		raw := proj.DatabasePath
+		consts.SetSSADatabaseInfo(raw)
+		err = consts.SetGormSSAProjectDatabaseByInfo(raw)
 	}
-	return &ypb.Empty{}, nil
+	return &ypb.Empty{}, err
 }
 
 func (s *Server) GetCurrentProject(ctx context.Context, _ *ypb.Empty) (*ypb.ProjectDescription, error) {
@@ -156,16 +151,20 @@ func (s *Server) NewProject(ctx context.Context, req *ypb.NewProjectRequest) (*y
 	}
 
 	// create project database
-	pathName, err := yakit.CreateProjectFile(name, req.GetType())
-	if err != nil {
-		return nil, utils.Errorf("create project file failed: %v", err)
+	databasePath := req.GetDatabase()
+	if databasePath == "" {
+		var err error
+		databasePath, err = yakit.CreateProjectFile(name, req.GetType())
+		if err != nil {
+			return nil, utils.Errorf("create project file failed: %v", err)
+		}
 	}
 
 	// create project in profile database
 	projectData := &schema.Project{
 		ProjectName:   req.GetProjectName(),
 		Description:   req.GetDescription(),
-		DatabasePath:  pathName,
+		DatabasePath:  databasePath,
 		Type:          req.Type,
 		FolderID:      req.FolderId,
 		ChildFolderID: req.ChildFolderId,

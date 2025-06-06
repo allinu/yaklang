@@ -2,8 +2,11 @@ package aispec
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"github.com/h2non/filetype"
 	"github.com/yaklang/yaklang/common/utils"
+	"github.com/yaklang/yaklang/common/yak/yaklib/codec"
 	"io"
 	"os"
 	"strings"
@@ -34,6 +37,8 @@ type AIConfig struct {
 	FunctionCallRetryTimes int
 
 	HTTPErrorHandler func(error)
+
+	Images []*ImageDescription
 }
 
 func WithNoHTTPS(b bool) AIConfigOption {
@@ -101,9 +106,13 @@ func WithDebugStream(h ...bool) AIConfigOption {
 		if len(h) <= 0 || h[0] {
 			c.StreamHandler = func(r io.Reader) {
 				start := time.Now()
-				io.Copy(bufio.NewWriterSize(os.Stdout, 1), io.TeeReader(r, utils.FirstWriter(func(bytes []byte) {
+				reader := bufio.NewReader(r)
+				_, err := reader.ReadByte()
+				if err == nil {
 					log.Infof("first byte(token) delay: %v", time.Since(start))
-				})))
+				}
+				reader.UnreadByte()
+				io.Copy(os.Stdout, reader)
 			}
 		} else {
 			c.StreamHandler = nil
@@ -120,6 +129,59 @@ func WithDomain(domain string) AIConfigOption {
 func WithModel(model string) AIConfigOption {
 	return func(c *AIConfig) {
 		c.Model = model
+	}
+}
+
+func WithChatImageContent(image ...any) AIConfigOption {
+	return func(c *AIConfig) {
+		for _, i := range image {
+			switch v := i.(type) {
+			case string:
+				if utils.GetFirstExistedFile(v) != "" {
+					log.Infof("add image_url.url with: %v", utils.ShrinkString(v, 200))
+					WithImageFile(v)(c)
+				} else if strings.HasPrefix(v, "http://") || strings.HasPrefix(v, "https://") {
+					log.Infof("add image_url.url with: %v", utils.ShrinkString(v, 200))
+					c.Images = append(c.Images, &ImageDescription{
+						Url: v,
+					})
+				} else if utils.MatchAllOfGlob(v, `data:image/*;base64*`) {
+					log.Infof("add image_url.url with: %v", utils.ShrinkString(v, 200))
+					c.Images = append(c.Images, &ImageDescription{
+						Url: v,
+					})
+				} else {
+					log.Warnf("invalid image: %s", v)
+				}
+			case *ImageDescription:
+				if v.Url != "" {
+					log.Infof("add image_url.url with: %v", utils.ShrinkString(v.Url, 200))
+					c.Images = append(c.Images, v)
+				} else {
+					log.Warnf("invalid image description: %v", v)
+				}
+			case *ChatContent:
+				if v.Type == "image_url" {
+					log.Infof("add image_url.url with: %v", utils.ShrinkString(v.ImageUrl, 200))
+					c.Images = append(c.Images, &ImageDescription{
+						Url: utils.MapGetString(utils.InterfaceToGeneralMap(v.ImageUrl), "url"),
+					})
+				} else {
+					log.Warnf("invalid chat content image: %v", v)
+				}
+			case ChatContent:
+				if v.Type == "image_url" {
+					c.Images = append(c.Images, &ImageDescription{
+						Url: utils.MapGetString(utils.InterfaceToGeneralMap(v.ImageUrl), "url"),
+					})
+				} else {
+					log.Warnf("invalid chat content image: %v", v)
+				}
+			default:
+				log.Warnf("unsupported image type: %T, value: %v", i, i)
+			}
+		}
+
 	}
 }
 
@@ -144,6 +206,37 @@ func WithProxy(p string) AIConfigOption {
 func WithAPIKey(k string) AIConfigOption {
 	return func(c *AIConfig) {
 		c.APIKey = strings.TrimSpace(k)
+	}
+}
+
+func WithImageFile(i string) AIConfigOption {
+	return func(config *AIConfig) {
+		if utils.GetFirstExistedFile(i) == "" {
+			log.Warnf("file: %v is not existed", i)
+			return
+		}
+
+		data, err := os.ReadFile(i)
+		if err != nil {
+			log.Warnf("file: %v read error: %v", i, err)
+			return
+		}
+
+		name, err := filetype.Image(data)
+		if err != nil {
+			log.Warnf("file: %v is not image: %v", i, err)
+			return
+		}
+
+		var buf bytes.Buffer
+		buf.WriteString("data:")
+		buf.WriteString(name.MIME.Value)
+		buf.WriteString(";")
+		buf.WriteString("base64,")
+		buf.WriteString(codec.EncodeBase64(data))
+		config.Images = append(config.Images, &ImageDescription{
+			Url: buf.String(),
+		})
 	}
 }
 

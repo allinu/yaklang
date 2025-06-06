@@ -70,15 +70,21 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 			}
 		}()
 
-		sendError = stream.Send(rsp)
+		sendError = stream.Send(safeUTF8MITMV2Resp(rsp))
 		return
 	}
+	sendLogged := func(rsp *ypb.MITMV2Response) {
+		err := send(rsp)
+		if err != nil {
+			log.Errorf("send mitm response error: %v", err)
+		}
+	}
 
-	feedbacker := yak.YakitCallerIf(func(result *ypb.ExecResult) error {
+	execFeedback := yak.YakitCallerIf(func(result *ypb.ExecResult) error {
 		return send(&ypb.MITMV2Response{Message: result, HaveMessage: true})
 	})
 
-	feedbackToUser := feedbackFactory(s.GetProjectDatabase(), feedbacker, false, "")
+	feedbackToUser := feedbackFactory(s.GetProjectDatabase(), execFeedback, false, "")
 
 	getPlainRequestBytes := func(req *http.Request) []byte {
 		var plainRequest []byte
@@ -203,7 +209,7 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 	}
 	addr := utils.HostPort(host, port)
 
-	ctx, cancel := context.WithCancel(stream.Context())
+	streamCtx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
 
 	log.Infof("start to create mitm server instance for %v", addr)
@@ -244,7 +250,7 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 	})
 
 	recoverFilterAndReplacerSend := func() {
-		send(&ypb.MITMV2Response{
+		sendLogged(&ypb.MITMV2Response{
 			JustFilter:          true,
 			FilterData:          filterManager.Data,
 			JustContentReplacer: true,
@@ -258,7 +264,7 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 	if err != nil {
 		return utils.Errorf("create mitm plugin manager failed: %s", err)
 	}
-	mitmPluginCaller.SetFeedback(feedbacker)
+	mitmPluginCaller.SetFeedback(execFeedback)
 	mitmPluginCaller.SetDividedContext(true)
 	mitmPluginCaller.SetConcurrent(20)
 	mitmPluginCaller.SetLoadPluginTimeout(10)
@@ -268,7 +274,7 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 	}
 
 	cacheDebounce, _ := lo.NewDebounce(1*time.Second, func() {
-		send(&ypb.MITMV2Response{
+		sendLogged(&ypb.MITMV2Response{
 			HaveNotification:    true,
 			NotificationContent: []byte("MITM 插件去重缓存已重置"),
 		})
@@ -283,7 +289,7 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 
 	hijackManger := newManualHijackManager()
 	hijackListReload := func() {
-		send(&ypb.MITMV2Response{
+		sendLogged(&ypb.MITMV2Response{
 			ManualHijackListAction: Hijack_List_Reload,
 			ManualHijackList:       hijackManger.getHijackingTaskInfo(),
 		})
@@ -304,7 +310,7 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 			}
 		}
 		if hijackManger.isManual() {
-			send(&ypb.MITMV2Response{
+			sendLogged(&ypb.MITMV2Response{
 				ManualHijackListAction: action,
 				ManualHijackList:       resp,
 			})
@@ -321,7 +327,7 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 
 			if reqInstance.GetRecoverContext() {
 				log.Infof("retry recover mitm session")
-				send(&ypb.MITMV2Response{
+				sendLogged(&ypb.MITMV2Response{
 					JustFilter:          true,
 					FilterData:          filterManager.Data,
 					JustContentReplacer: true,
@@ -332,7 +338,7 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 
 			if reqInstance.GetResetFilter() {
 				filterManager.Recover()
-				send(&ypb.MITMV2Response{
+				sendLogged(&ypb.MITMV2Response{
 					JustFilter: true,
 					FilterData: filterManager.Data,
 				})
@@ -359,7 +365,7 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 				if len(reqInstance.GetInitPluginNames()) > 0 {
 					plugins := reqInstance.GetInitPluginNames()
 
-					send(&ypb.MITMV2Response{HaveLoadingSetter: true, LoadingFlag: true})
+					sendLogged(&ypb.MITMV2Response{HaveLoadingSetter: true, LoadingFlag: true})
 					swg := utils.NewSizedWaitGroup(50)
 					var failedCount, successCount atomic.Int64
 					startTime := time.Now()
@@ -369,7 +375,7 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 						go func() {
 							defer swg.Done()
 							err := mitmPluginCaller.LoadPluginEx(
-								ctx,
+								streamCtx,
 								script, reqInstance.GetYakScriptParams()...,
 							)
 							if err != nil {
@@ -382,8 +388,8 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 					}
 					swg.Wait()
 					duration := time.Now().Sub(startTime).Seconds()
-					send(&ypb.MITMV2Response{HaveLoadingSetter: true, LoadingFlag: false})
-					send(&ypb.MITMV2Response{HaveNotification: true, NotificationContent: []byte(fmt.Sprintf(
+					sendLogged(&ypb.MITMV2Response{HaveLoadingSetter: true, LoadingFlag: false})
+					sendLogged(&ypb.MITMV2Response{HaveNotification: true, NotificationContent: []byte(fmt.Sprintf(
 						"初始化加载插件完成，加载成功【%v】个，失败【%v】个, 共耗时 %f 秒。", successCount.Load(), failedCount.Load(), duration,
 					))})
 				}
@@ -398,10 +404,10 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 				if script != nil {
 					if script.Type == "mitm" || script.Type == "port-scan" {
 						log.Infof("start to load yakScript[%v]: %v 's capabilities", script.ID, script.ScriptName)
-						err = mitmPluginCaller.LoadPluginEx(ctx, script, reqInstance.GetYakScriptParams()...)
+						err = mitmPluginCaller.LoadPluginEx(streamCtx, script, reqInstance.GetYakScriptParams()...)
 						if err != nil {
 							if len(script.GetParams()) > 0 {
-								_ = send(&ypb.MITMV2Response{HaveNotification: true, NotificationContent: []byte(fmt.Sprintf(
+								sendLogged(&ypb.MITMV2Response{HaveNotification: true, NotificationContent: []byte(fmt.Sprintf(
 									"加载插件【%s】，参数【%v】失败", script.ScriptName, reqInstance.GetYakScriptParams(),
 								))})
 							}
@@ -411,17 +417,17 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 				} else if reqInstance.GetYakScriptContent() != "" {
 					hotPatchScript := reqInstance.GetYakScriptContent()
 					log.Info("start to load yakScriptContent content")
-					err := mitmPluginCaller.LoadHotPatch(stream.Context(), reqInstance.GetYakScriptParams(), hotPatchScript)
+					err := mitmPluginCaller.LoadHotPatch(streamCtx, reqInstance.GetYakScriptParams(), hotPatchScript)
 					if err != nil {
 						if strings.Contains(err.Error(), "YakVM Panic:") {
 							splitErr := strings.SplitN(err.Error(), "YakVM Panic:", 2)
 							err = utils.Error(splitErr[1])
 						}
-						_ = send(&ypb.MITMV2Response{HaveNotification: true, NotificationContent: []byte(fmt.Sprintf("mitm load hotpatch script error:%v", err))})
+						sendLogged(&ypb.MITMV2Response{HaveNotification: true, NotificationContent: []byte(fmt.Sprintf("mitm load hotpatch script error:%v", err))})
 					}
 				}
 
-				_ = send(&ypb.MITMV2Response{
+				sendLogged(&ypb.MITMV2Response{
 					GetCurrentHook: true,
 					Hooks:          mitmPluginCaller.GetNativeCaller().GetCurrentHooksGRPCModel(),
 				})
@@ -436,7 +442,7 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 			if reqInstance.GetRemoveHook() {
 				clearPluginHTTPFlowCache()
 				mitmPluginCaller.GetNativeCaller().Remove(reqInstance.GetRemoveHookParams())
-				_ = send(&ypb.MITMV2Response{
+				sendLogged(&ypb.MITMV2Response{
 					GetCurrentHook: true,
 					Hooks:          mitmPluginCaller.GetNativeCaller().GetCurrentHooksGRPCModel(),
 				})
@@ -444,7 +450,7 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 			}
 
 			if reqInstance.GetGetCurrentHook() {
-				_ = send(&ypb.MITMV2Response{
+				sendLogged(&ypb.MITMV2Response{
 					GetCurrentHook: true,
 					Hooks:          mitmPluginCaller.GetNativeCaller().GetCurrentHooksGRPCModel(),
 				})
@@ -600,7 +606,7 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 
 		for {
 			select {
-			case <-ctx.Done():
+			case <-streamCtx.Done():
 				return raw
 			case controlMessage, ok := <-task.messageChan:
 				if !ok {
@@ -723,21 +729,9 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 			if handleResponseModified(rspHooked) {
 				httpctx.SetResponseModified(req, "yakit.rule.hook")
 				httpctx.SetHijackedResponseBytes(req, rspHooked)
+				rsp = rspHooked
 			}
-			return rspHooked
 		}
-
-		// 非自动转发的情况下处理替换器
-		rules, rsp1, shouldBeDropped := replacer.hook(false, true, httpctx.GetRequestURL(req), rsp)
-		if shouldBeDropped {
-			log.Warn("response should be dropped(VIA replacer.hook)")
-			httpctx.SetContextValueInfoFromRequest(req, httpctx.RESPONSE_CONTEXT_KEY_IsDropped, true)
-			return nil
-		}
-		if handleResponseModified(rsp1) {
-			rsp = rsp1
-		}
-		httpctx.AppendMatchedRule(req, rules...)
 
 		ptr := fmt.Sprintf("%p", req)
 		if !httpctx.GetContextBoolInfoFromRequest(req, httpctx.RESPONSE_CONTEXT_KEY_ShouldBeHijackedFromRequest) {
@@ -747,11 +741,11 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 		rsp, _, err := lowhttp.FixHTTPResponse(rsp)
 		if err != nil {
 			log.Errorf("fix http response packet failed: %s", err)
-			return originRspRaw
+			return rsp
 		}
 
 		if taskInfo == nil || task == nil { // task not registered ,or deleted, should not hijack
-			return originRspRaw
+			return rsp
 		}
 
 		var traceInfo *lowhttp.LowhttpTraceInfo
@@ -760,6 +754,7 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 		}
 
 		taskInfo.Status = Hijack_Status_Response
+		taskInfo.Request = httpctx.GetRequestBytes(req)
 		taskInfo.Response = rsp
 		taskInfo.TraceInfo = model.ToLowhttpTraceInfoGRPCModel(traceInfo)
 		httpctx.SetResponseViewedByUser(req)
@@ -767,7 +762,7 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 		for {
 			hijackListFeedback(Hijack_List_Update, taskInfo)
 			select {
-			case <-ctx.Done():
+			case <-streamCtx.Done():
 				return rsp
 			case controlMessage, ok := <-task.messageChan:
 				if !ok {
@@ -843,7 +838,7 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 		finalResult = originReqRaw
 
 		defer func() {
-			wsFlow := yakit.BuildWebsocketFlow(true, wshash, requireWsFrameIndexByWSHash(wshash), finalResult[:])
+			wsFlow := yakit.BuildWebsocketFlow(false, wshash, requireWsFrameIndexByWSHash(wshash), finalResult[:])
 			replacer.hookColorWs(finalResult, wsFlow)
 			yakit.SaveWebsocketFlowEx(s.GetProjectDatabase(), wsFlow, func(err error) {
 				if err != nil {
@@ -883,7 +878,7 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 
 		for {
 			select {
-			case <-ctx.Done():
+			case <-streamCtx.Done():
 				return raw
 			case controlMessage, ok := <-task.messageChan:
 				if !ok {
@@ -923,7 +918,6 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 		})
 
 		httpctx.SetMatchedRule(originReqIns, make([]*ypb.MITMContentReplacer, 0))
-		originReqRaw := req[:]
 		fixReq := lowhttp.FixHTTPRequest(req)
 		fixReqIns, _ := lowhttp.ParseBytesToHttpRequest(fixReq)
 		method := originReqIns.Method
@@ -1052,7 +1046,7 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 
 		task := hijackManger.register(feedbackOrigin)
 		if task == nil {
-			return originReqRaw
+			return req
 		}
 
 		taskInfo := task.infoMessage
@@ -1082,11 +1076,11 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 		for {
 			hijackListFeedback(Hijack_List_Update, taskInfo)
 			select {
-			case <-ctx.Done():
-				return originReqRaw
+			case <-streamCtx.Done():
+				return req
 			case controlReq, ok := <-task.messageChan:
 				if !ok {
-					return originReqRaw
+					return req
 				}
 				if controlReq.GetHijackResponse() {
 					taskInfo.HijackResponse = true
@@ -1140,9 +1134,8 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 					return nil
 				}
 
-				// 原封不动转发
 				if controlReq.GetForward() {
-					return originReqRaw
+					return req
 				}
 
 				if controlReq.GetSendPacket() {
@@ -1326,7 +1319,7 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 		}
 
 		var needUpdate bool
-		timeoutCtx, timeCancel := context.WithTimeout(ctx, 300*time.Millisecond)
+		timeoutCtx, timeCancel := context.WithTimeout(streamCtx, 300*time.Millisecond)
 		defer timeCancel()
 		select {
 		case <-colorCh:
@@ -1415,7 +1408,7 @@ func (s *Server) MITMV2(stream ypb.Yak_MITMV2Server) error {
 
 	log.Infof("start serve mitm server for %s", addr)
 	// err = mServer.Run(ctx)
-	err = mServer.ServeWithListenedCallback(ctx, utils.HostPort(host, port), func() {
+	err = mServer.ServeWithListenedCallback(streamCtx, utils.HostPort(host, port), func() {
 		feedbackToUser("MITM 服务器已启动 / starting mitm server")
 	})
 	if err != nil {

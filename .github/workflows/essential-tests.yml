@@ -58,6 +58,7 @@ jobs:
           - name: "Test in 2min"
             run: |
               # these tests are very quick
+              go test -timeout 20s ./common/chunkmaker/...
               go test -timeout 20s ./common/jsonextractor  
               go test -timeout 20s ./common/markdownextractor  
               go test -timeout 20s ./common/yak/yaklib/codec 
@@ -99,7 +100,7 @@ jobs:
               go test --timeout 30s ./common/fp/...
               go test --timeout 30s ./common/yak/cmd/...
               go test --timeout 30s ./common/javaclassparser/tests/...
-              
+
               # suricate generate && match
               go test -timeout 20s -run TestMUSTPASS* ./common/suricata/...
               go test -timeout 20s -run TestMUSTPASS* ./common/chaosmaker
@@ -142,7 +143,9 @@ jobs:
 
           - name: Test AI Infra
             run: |
-              go test -timeout 40s ./common/ai/aid/...  
+              go test -timeout 40s ./common/ai/aid/...
+              go test -timeout 40s ./common/aireducer/...
+              go test -timeout 30s ./common/aiforge/aibp/forge_builder_test.go
 
           - name: Test SSA Frontend TypeScript
             run: |
@@ -190,7 +193,7 @@ jobs:
               # Test gRPC MUSTPASS MITM
               go test -timeout 5m -run TestGRPCMUSTPASS_MITM_* ./common/yakgrpc/...
               # Test gRPC MUSTPASS MITM V2
-              go test -timeout 5m -run TestGRPCMUSTPASS_MITMV2_* ./common/yakgrpc/... 
+              go test -timeout 5m -run TestGRPCMUSTPASS_MITMV2_* ./common/yakgrpc/...
 
           - name: Test gRPC MUSTPASS Fuzzer
             run: go test -timeout 5m -run TestGRPCMUSTPASS_HTTPFuzzer* ./common/yakgrpc/...
@@ -210,11 +213,14 @@ jobs:
           - name: Test gRPC MUSTPASS HTTPFlow Analyzer
             run: go test -timeout 2m -run TestGRPCMUSTPASS_AnalyzeHTTPFlow* ./common/yakgrpc/...
 
+          - name: Test gRPC MUSTPASSFingerprint
+            run: go test -timeout 2m -run TestGRPCMUSTPASS_Fingerprint* ./common/yakgrpc/...
+
           - name: Test AI Task
             run: go test -timeout 1m -run TestAITaskWith ./common/yakgrpc/...
 
           - name: Test gRPC Other
-            run: go test -v -timeout 6m -skip "^(TestGRPC_Ai_List_Model|TestGRPCMUSTPASS_HTTP_*|TestAITaskWith*|TestGRPCMUSTPASS_MITM_*|TestGRPCMUSTPASS_HTTPFuzzer*|TestGRPCMUSTPASS_LANGUAGE*|TestGRPCMUSTPASS_COMMON*|TestLARGEGRPCMUSTPASS*|TestGRPCMUSTPASS_SyntaxFlow*)" ./common/yakgrpc/...
+            run: go test -v -timeout 6m -skip "^(TestGRPCMUSTPASS_AnalyzeHTTPFlow*|TestGRPCMUSTPASS_Fingerprint*|TestGRPC_Ai_List_Model|TestGRPCMUSTPASS_HTTP_*|TestAITaskWith*|TestGRPCMUSTPASS_MITM_*|TestGRPCMUSTPASS_HTTPFuzzer*|TestGRPCMUSTPASS_LANGUAGE*|TestGRPCMUSTPASS_COMMON*|TestLARGEGRPCMUSTPASS*|TestGRPCMUSTPASS_SyntaxFlow*)" ./common/yakgrpc/...
 
           - name: Test Vulinbox SQL Injection
             run: go test -timeout 5m -run TestGRPCMUSTPASS_SQL ./common/coreplugin
@@ -273,7 +279,6 @@ jobs:
         with:
           go-version-file: "./go.mod"
         id: go
-
 
       - name: GRPC
         run: |

@@ -66,8 +66,9 @@ func (c *Config) CreateRequireUserInteract() (*aitool.Tool, error) {
 }
 
 type RequireInteractiveRequestOption struct {
-	Index  int    `json:"index"`
-	Prompt string `json:"prompt"`
+	Index       int    `json:"index"`
+	PromptTitle string `json:"prompt_title"`
+	Prompt      string `json:"prompt"`
 }
 
 type RequireInteractiveRequest struct {
@@ -76,7 +77,7 @@ type RequireInteractiveRequest struct {
 	Options []*RequireInteractiveRequestOption `json:"options"`
 }
 
-func (c *Config) RequireUserPrompt(prompt string, opts ...*RequireInteractiveRequestOption) (aitool.InvokeParams, error) {
+func (c *Config) RequireUserPromptWithEndpointResult(prompt string, opts ...*RequireInteractiveRequestOption) (aitool.InvokeParams, *Endpoint, error) {
 	ep := c.epm.createEndpointWithEventType(EVENT_TYPE_REQUIRE_USER_INTERACTIVE)
 	ep.SetDefaultSuggestionContinue()
 
@@ -86,10 +87,15 @@ func (c *Config) RequireUserPrompt(prompt string, opts ...*RequireInteractiveReq
 		Options: opts,
 	}
 	c.EmitRequireUserInteractive(req, ep.id)
-	c.doWaitAgree(c.ctx, ep)
+	c.doWaitAgreeWithPolicy(c.ctx, AgreePolicyManual, ep)
 	params := ep.GetParams()
 	c.ReleaseInteractiveEvent(ep.id, params)
-	return params, nil
+	return params, ep, nil
+}
+
+func (c *Config) RequireUserPrompt(prompt string, opts ...*RequireInteractiveRequestOption) (aitool.InvokeParams, error) {
+	params, _, err := c.RequireUserPromptWithEndpointResult(prompt, opts...)
+	return params, err
 }
 
 func (c *Config) EmitRequireUserInteractive(i *RequireInteractiveRequest, id string) {

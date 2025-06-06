@@ -43,10 +43,6 @@ func TestVerifiedRule(t *testing.T) {
 	}
 }
 
-func TestA(t *testing.T) {
-	sfbuildin.SyncEmbedRule()
-}
-
 func TestVerify_DEBUG(t *testing.T) {
 	if utils.InGithubActions() {
 		t.SkipNow()
@@ -55,7 +51,8 @@ func TestVerify_DEBUG(t *testing.T) {
 	yakit.InitialDatabase()
 	err := sfbuildin.SyncEmbedRule()
 	require.NoError(t, err)
-	ruleName := "检测 SAXParserFactory() 不安全使用"
+	// ruleName := "golang 反射型跨站脚本攻击(gobee)"
+	ruleName := "golang 服务器端请求伪造(beego)"
 
 	rule, err := sfdb.GetRulePure(ruleName)
 	if err != nil {

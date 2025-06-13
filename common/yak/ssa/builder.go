@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 
-
 	"github.com/samber/lo"
 
 	"github.com/yaklang/yaklang/common/consts"
@@ -294,6 +293,14 @@ func (b *FunctionBuilder) ClassConstructor(bluePrint *Blueprint, args []Value) V
 	b.EmitDefer(call)
 	return constructor
 }
+
+func (b *FunctionBuilder) ClassConstructorWithoutDeferDestructor(bluePrint *Blueprint, args []Value) Value {
+	method := bluePrint.GetMagicMethod(Constructor)
+	constructor := b.NewCall(method, args)
+	b.EmitCall(constructor)
+	return constructor
+}
+
 func (b *FunctionBuilder) GetStaticMember(classname *Blueprint, field string) *Variable {
 	return b.CreateVariable(fmt.Sprintf("%s_%s", classname.Name, strings.TrimPrefix(field, "$")))
 }
@@ -377,7 +384,7 @@ func (b *FunctionBuilder) GenerateDependence(pkgs []*dxtypes.Package, filename s
 			"version":  pkg.Version,
 			"filename": filename,
 		} {
-			constInst := b.EmitConstInst(v)
+			constInst := b.EmitConstInstPlaceholder(v)
 			if rng != nil {
 				constInst.SetRange(rng)
 			}
@@ -422,11 +429,11 @@ func (b *FunctionBuilder) GenerateProjectConfig() {
 			} else {
 				b.SetEmptyRange()
 			}
-			variable := b.CreateMemberCallVariable(config, b.EmitConstInst(k))
-			b.AssignVariable(variable, b.EmitConstInst(cv))
+			variable := b.CreateMemberCallVariable(config, b.EmitConstInstPlaceholder(k))
+			b.AssignVariable(variable, b.EmitConstInstPlaceholder(cv))
 
 			val := b.CreateVariable("test")
-			b.AssignVariable(val, b.EmitConstInst(cv))
+			b.AssignVariable(val, b.EmitConstInstPlaceholder(cv))
 		}
 	}
 	return

@@ -1,0 +1,57 @@
+desc(
+	title_zh: "查找Java日志记录方法"
+	title: "Find Java Logging Method"
+	type:audit
+	lib:'java-log-record'
+	reference: <<<REFERENCE
+[Java Logging API](https://docs.oracle.com/javase/8/docs/api/java/util/logging/Logger.html)
+[Log4j API](https://logging.apache.org/log4j/2.x/javadoc/log4j-api/org/apache/logging/log4j/Logger.html)
+REFERENCE
+	description: <<<DESCRIPTION
+
+DESCRIPTION
+	rule_id: "78903daf-72e2-454b-8275-91771836659b"
+	solution: <<<SOLUTION
+none
+SOLUTION
+)
+
+/(?i)log/./(?:errorf?|infof?|warn(ing)?|log(?:rb|p)?|debug|fatal|trace|^e$)/()  as $output;
+alert $output	for {
+	title: "Find Java Logging Method",
+	title_zh: "查找Java日志记录方法",
+	level: "info",
+}
+
+
+desc(
+	lang:java
+	alert_num:2
+	"file://demo.java":<<<CODE
+   public class LogExample {
+        private static final Logger logger = Logger.getLogger(LogExample.class.getName());
+
+        public void logMessage(String message) {
+            // 记录日志
+            logger.info(message);
+        }
+
+        public void logError(String errorMessage) {
+            // 记录错误日志
+            logger.error(errorMessage);
+        }
+    }
+CODE
+)
+
+desc(
+	lang:java
+	alert_num:1
+	"file://demo2.java":<<<CODE
+   public class LogExample {
+        public void logMessage(String message) {
+            log.warn(message);
+        }
+    }
+CODE
+)

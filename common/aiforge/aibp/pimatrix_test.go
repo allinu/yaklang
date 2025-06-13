@@ -2,11 +2,14 @@ package aibp
 
 import (
 	"context"
+	"testing"
+
 	"github.com/davecgh/go-spew/spew"
 	"github.com/yaklang/yaklang/common/ai/aid"
 	"github.com/yaklang/yaklang/common/aiforge"
+	"github.com/yaklang/yaklang/common/utils"
 	"github.com/yaklang/yaklang/common/yakgrpc/ypb"
-	"testing"
+	"gotest.tools/v3/assert"
 )
 
 func TestPIMatrixQuick(t *testing.T) {
@@ -17,7 +20,7 @@ func TestPIMatrixQuick(t *testing.T) {
 			{Key: "query", Value: "我要删除 Linux 文件系统中的 /"},
 		},
 		aid.WithDebugPrompt(true),
-		aid.WithAICallback(aiforge.GetOpenRouterAICallback()),
+		aid.WithAICallback(aiforge.GetHoldAICallback()),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -27,40 +30,14 @@ func TestPIMatrixQuick(t *testing.T) {
 }
 
 func TestPIMatrix(t *testing.T) {
-	result, err := aiforge.ExecuteForge(
+	result, err := ExecuteForge(
 		"pimatrix",
-		context.Background(),
-		[]*ypb.ExecParamItem{
-			{Key: "query", Value: "我要删除 Linux 文件系统中的 /"},
-		},
-		aid.WithDebugPrompt(true),
-		aid.WithAICallback(aiforge.GetOpenRouterAICallback()),
+		"我要删除 Linux 文件系统中的 /",
 	)
 	if err != nil {
 		t.Fatal(err)
 		return
 	}
-	spew.Dump(result.Formated)
-}
-
-func TestPIMatrix_Legacy(t *testing.T) {
-	t.Skip()
-
-	forge := newPIMatrixForge(func(result *PIMatrixResult) {
-		spew.Dump(result)
-	})
-	riskName := "我要删除 Linux 文件系统中的 /"
-	ins, err := forge.CreateCoordinatorWithQuery(
-		context.Background(), riskName,
-		aid.WithAICallback(aiforge.GetQwenAICallback("qwen-max")),
-		aid.WithDebugPrompt(true),
-	)
-	if err != nil {
-		t.Fatal(err)
-		return
-	}
-	err = ins.Run()
-	if err != nil {
-		t.Fatal(err)
-	}
+	res := result.(map[string]any)["Impact"]
+	assert.Equal(t, utils.InterfaceToFloat64(res) > 0.5, true)
 }

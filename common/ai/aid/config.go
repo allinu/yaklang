@@ -4,14 +4,20 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/yaklang/yaklang/common/ai/aispec"
-	"io"
+	"github.com/yaklang/yaklang/common/utils/chanx"
 	"math/rand/v2"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/yaklang/yaklang/common/yakgrpc/ypb"
+	"github.com/yaklang/yaklang/common/ai"
+	"github.com/yaklang/yaklang/common/consts"
+	"github.com/yaklang/yaklang/common/schema"
+	"github.com/yaklang/yaklang/common/utils/omap"
+	"github.com/yaklang/yaklang/common/yakgrpc/yakit"
+
+	"github.com/yaklang/yaklang/common/ai/aispec"
 
 	"github.com/google/uuid"
 	"github.com/yaklang/yaklang/common/ai/aid/aitool"
@@ -49,6 +55,7 @@ type Config struct {
 	cancel context.CancelFunc
 
 	startInputEventOnce sync.Once
+	wg                  sync.WaitGroup // sub task wait group
 
 	idSequence  int64
 	idGenerator func() int64
@@ -56,11 +63,16 @@ type Config struct {
 	m  *sync.Mutex
 	id string
 
+	startHotpatchOnce  sync.Once
+	hotpatchOptionChan *chanx.UnlimitedChan[Option]
+
 	eventInputChan chan *InputEvent
 	epm            *endpointManager
 
 	// plan mocker
-	planMocker func(*Config) *PlanResponse
+	planMocker               func(*Config) *PlanResponse
+	allowPlanUserInteract    bool  // allow user to interact before planning.
+	planUserInteractMaxCount int64 // max user interact count before planning, default is 3
 
 	// need to think
 	coordinatorAICallback AICallbackType
@@ -68,23 +80,22 @@ type Config struct {
 
 	// no need to think, low level
 	taskAICallback AICallbackType
-	toolAICallback SimpleAiCallbackType
-	tools          []*aitool.Tool
-	eventHandler   func(e *Event)
 
-	enableToolSearch bool
+	// asyncGuardian can auto collect event handler data
+	guardian     *asyncGuardian
+	eventHandler func(e *Event)
+
 	// tool manager
-	aiToolManager *buildinaitools.AiToolManager
-
-	// task ai resp callback
-	taskAIRespCallback func(string, *Config)
+	aiToolManager       *buildinaitools.AiToolManager
+	aiToolManagerOption []buildinaitools.ToolManagerOption
 
 	// memory
 	persistentMemory          []string
 	memory                    *Memory
-	timelineLimit             int
-	timelineContentLimit      int
+	timelineRecordLimit       int
+	timelineContentSizeLimit  int
 	timelineTotalContentLimit int
+	keywords                  []string // task keywords, maybe tools name ,help ai to plan
 
 	// stream waitgroup
 	streamWaitGroup *sync.WaitGroup
@@ -96,11 +107,11 @@ type Config struct {
 	allowRequireForUserInteract bool
 
 	// do not use it directly, use doAgree() instead
-	agreePolicy    AgreePolicyType
-	agreeInterval  time.Duration
-	agreeAIScore   float64
-	agreeRiskCtrl  *riskControl
-	agreeAssistant *AIAssistant
+	agreePolicy         AgreePolicyType
+	agreeInterval       time.Duration
+	agreeAIScore        float64
+	agreeRiskCtrl       *riskControl
+	agreeManualCallback func(context.Context, *Config) (aitool.InvokeParams, error)
 
 	//review suggestion
 
@@ -117,6 +128,108 @@ type Config struct {
 
 	resultHandler          func(*Config)
 	extendedActionCallback map[string]func(config *Config, action *Action)
+
+	promptHook     func(string) string
+	generateReport bool
+
+	forgeName string // if coordinator is create from a forge, this is the forge name
+
+	maxTaskContinue int64
+}
+
+func (c *Config) HandleSearch(query string, items *omap.OrderedMap[string, []string]) ([]*searchtools.KeywordSearchResult, error) {
+	type ToolWithKeywords struct {
+		Name     string `json:"Name"`
+		Keywords string `json:"Keywords"`
+	}
+
+	toolsLists := []ToolWithKeywords{}
+	items.ForEach(func(key string, value []string) bool {
+		toolsLists = append(toolsLists, ToolWithKeywords{
+			Name:     key,
+			Keywords: strings.Join(value, ", "),
+		})
+		return true
+	})
+	var nonce = strings.ToLower(utils.RandStringBytes(6))
+	prompt, err := c.quickBuildPrompt(__prompt_KeywordSearchPrompt, map[string]any{
+		"NONCE":           nonce,
+		"Memory":          c.memory,
+		"UserRequirement": query,
+		"ToolsLists":      toolsLists,
+	})
+	if err != nil {
+		return nil, err
+	}
+	var callResults []*searchtools.KeywordSearchResult
+
+	err = c.callAiTransaction(prompt, c.callAI, func(response *AIResponse) error {
+		action, err := ExtractActionFromStream(response.GetUnboundStreamReader(false), "keyword_search")
+		if err != nil {
+			log.Errorf("extract aitool-keyword-search action failed: %v", err)
+			return utils.Errorf("extract aitool-keyword-search failed: %v", err)
+		}
+		tools := action.GetInvokeParamsArray("matches")
+		if len(tools) > 0 {
+			for _, toolInfo := range tools {
+				callResults = append(callResults, &searchtools.KeywordSearchResult{
+					Tool:            toolInfo.GetString("tool"),
+					MatchedKeywords: toolInfo.GetStringSlice("matched_keywords"),
+				})
+			}
+			return nil
+		}
+		return utils.Errorf("no tool found")
+	})
+	if err != nil {
+		return nil, err
+	}
+	return callResults, nil
+
+}
+
+func (c *Config) InitToolManager() error {
+	if c.aiToolManager == nil {
+		c.aiToolManager = buildinaitools.NewToolManager(append(c.aiToolManagerOption, buildinaitools.WithSearcher(func(query string, searchList []*aitool.Tool) ([]*aitool.Tool, error) {
+			keywords := omap.NewOrderedMap[string, []string](nil)
+			toolMap := map[string]*aitool.Tool{}
+			for _, tool := range searchList {
+				keywords.Set(tool.GetName(), tool.GetKeywords())
+				toolMap[tool.GetName()] = tool
+			}
+			searchResults, err := c.HandleSearch(query, keywords)
+			if err != nil {
+				return nil, err
+			}
+			tools := []*aitool.Tool{}
+			for _, result := range searchResults {
+				tools = append(tools, toolMap[result.Tool])
+			}
+			return tools, nil
+		}))...)
+	}
+	return nil
+}
+
+func (c *Config) MakeInvokeParams() aitool.InvokeParams {
+	p := make(aitool.InvokeParams)
+	p["runtime_id"] = c.id
+	return p
+}
+
+func (c *Config) Add(delta int) {
+	c.wg.Add(delta)
+	return
+}
+
+func (c *Config) Done() {
+	c.wg.Done()
+	return
+}
+
+func (c *Config) Wait() {
+	c.wg.Wait()
+	return
 }
 
 func (c *Config) AcquireId() int64 {
@@ -176,8 +289,18 @@ func (c *Config) SetSyncCallback(i SyncType, callback func() any) {
 }
 
 func (c *Config) emit(e *Event) {
+	select {
+	case <-c.ctx.Done():
+		return
+	default:
+	}
 	c.m.Lock()
 	defer c.m.Unlock()
+
+	if c.guardian != nil {
+		c.guardian.feed(e)
+	}
+
 	if c.eventHandler == nil {
 		if e.IsStream {
 			if c.debugEvent {
@@ -221,17 +344,31 @@ func initDefaultTools(c *Config) error { // set config default tools
 		return utils.Wrapf(err, "get basic build-in tools fail")
 	}
 
-	memoryTools, err := c.memory.CreateBasicMemoryTools()
-	if err != nil {
-		return utils.Errorf("create memory tools: %v", err)
+	return nil
+}
+
+func initDefaultAICallback(c *Config) error { // set config default tools
+	defaultAICallback := AIChatToAICallbackType(ai.Chat)
+	if defaultAICallback == nil {
+		return nil
 	}
-	if err := WithTools(memoryTools...)(c); err != nil {
+	if err := WithAICallback(defaultAICallback)(c); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (c *Config) loadToolsViaOptions() error {
+	if c.memory != nil {
+		memoryTools, err := c.memory.CreateBasicMemoryTools()
+		if err != nil {
+			return utils.Errorf("create memory tools: %v", err)
+		}
+		if err := WithTools(memoryTools...)(c); err != nil {
+			log.Errorf("load memory tools: %v", err)
+			return err
+		}
+	}
 	if c.allowRequireForUserInteract {
 		userPromptTool, err := c.CreateRequireUserInteract()
 		if err != nil {
@@ -253,7 +390,6 @@ func newConfig(ctx context.Context) *Config {
 }
 
 func newConfigEx(ctx context.Context, id string, offsetSeq int64) *Config {
-	m := GetDefaultMemory()
 	var idGenerator = new(int64)
 	log.Infof("coordinator with %v offset: %v", id, offsetSeq)
 
@@ -277,7 +413,8 @@ func newConfigEx(ctx context.Context, id string, offsetSeq int64) *Config {
 		id:                          id,
 		epm:                         newEndpointManagerContext(ctx),
 		streamWaitGroup:             new(sync.WaitGroup),
-		memory:                      m,
+		memory:                      nil, // default mem cannot create in config
+		guardian:                    newAysncGuardian(ctx, id),
 		syncMutex:                   new(sync.RWMutex),
 		syncMap:                     make(map[string]func() any),
 		inputConsumption:            new(int64),
@@ -286,39 +423,42 @@ func newConfigEx(ctx context.Context, id string, offsetSeq int64) *Config {
 		aiAutoRetry:                 5,
 		aiTransactionAutoRetry:      5,
 		allowRequireForUserInteract: true,
-		timelineLimit:               10,
-		timelineContentLimit:        30 * 1024,
+		timelineRecordLimit:         10,
+		timelineContentSizeLimit:    30 * 1024,
+		aiToolManagerOption:         make([]buildinaitools.ToolManagerOption, 0),
+		planUserInteractMaxCount:    3,
+		maxTaskContinue:             10,
 	}
 	c.epm.config = c // review
 	if err := initDefaultTools(c); err != nil {
 		log.Errorf("init default tools: %v", err)
+	}
+
+	if err := initDefaultAICallback(c); err != nil {
+		log.Errorf("init default ai callback: %v", err)
 	}
 	return c
 }
 
 type Option func(config *Config) error
 
-func WithTool(tool *aitool.Tool) Option {
+func WithCoordinatorId(id string) Option {
 	return func(config *Config) error {
 		config.m.Lock()
 		defer config.m.Unlock()
-		config.tools = append(config.tools, tool)
+		config.id = id
 		return nil
 	}
 }
 
-func WithYOLO(i ...bool) Option {
+func WithSequence(seq int64) Option {
 	return func(config *Config) error {
 		config.m.Lock()
 		defer config.m.Unlock()
-		if len(i) > 0 {
-			if i[0] {
-				config.setAgreePolicy(AgreePolicyYOLO)
-			} else {
-				config.setAgreePolicy(AgreePolicyManual)
-			}
-		} else {
-			config.setAgreePolicy(AgreePolicyYOLO)
+		var idGenerator = new(int64)
+		config.idSequence = atomic.AddInt64(idGenerator, seq)
+		config.idGenerator = func() int64 {
+			return atomic.AddInt64(idGenerator, 1)
 		}
 		return nil
 	}
@@ -336,15 +476,6 @@ func WithExtendedActionCallback(name string, cb func(config *Config, action *Act
 	}
 }
 
-func WithAgreeAIAssistant(a *AIAssistant) Option {
-	return func(config *Config) error {
-		config.m.Lock()
-		defer config.m.Unlock()
-		config.agreeAssistant = a
-		return nil
-	}
-}
-
 func WithDisallowRequireForUserPrompt() Option {
 	return func(config *Config) error {
 		config.m.Lock()
@@ -354,12 +485,28 @@ func WithDisallowRequireForUserPrompt() Option {
 	}
 }
 
-func WithAgreeAuto(auto bool, interval time.Duration) Option {
+func WithManualAssistantCallback(cb func(context.Context, *Config) (aitool.InvokeParams, error)) Option {
 	return func(config *Config) error {
 		config.m.Lock()
 		defer config.m.Unlock()
-		config.setAgreePolicy(AgreePolicyAuto)
-		config.agreeInterval = interval
+		config.agreeManualCallback = cb
+		return nil
+	}
+}
+
+func WithAgreeYOLO(i ...bool) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+		if len(i) > 0 {
+			if i[0] {
+				config.setAgreePolicy(AgreePolicyYOLO)
+			} else {
+				config.setAgreePolicy(AgreePolicyManual)
+			}
+		} else {
+			config.setAgreePolicy(AgreePolicyYOLO)
+		}
 		return nil
 	}
 }
@@ -382,16 +529,20 @@ func WithAIAgree() Option {
 	}
 }
 
-func WithAgreeManual() Option {
+func WithAgreeManual(cb ...func(context.Context, *Config) (aitool.InvokeParams, error)) Option {
 	return func(config *Config) error {
 		config.m.Lock()
 		defer config.m.Unlock()
 		config.setAgreePolicy(AgreePolicyManual)
+		if len(cb) > 0 {
+			config.agreeManualCallback = cb[0]
+		}
+
 		return nil
 	}
 }
 
-func WithAIAgreeAuto(interval time.Duration) Option {
+func WithAgreeAuto(interval time.Duration) Option {
 	return func(config *Config) error {
 		config.m.Lock()
 		defer config.m.Unlock()
@@ -414,27 +565,11 @@ func WithAllowRequireForUserInteract(opts ...bool) Option {
 	}
 }
 
-func WithTools(tool ...*aitool.Tool) Option {
-	return func(config *Config) error {
-		config.m.Lock()
-		defer config.m.Unlock()
-		config.tools = append(config.tools, tool...)
-		return nil
-	}
-}
-
 func WithAICallback(cb AICallbackType) Option {
 	return func(config *Config) error {
 		config.m.Lock()
 		defer config.m.Unlock()
 		warpedCb := config.wrapper(cb)
-		config.toolAICallback = func(msg string) (io.Reader, error) {
-			rsp, err := warpedCb(config, NewAIRequest(msg))
-			if err != nil {
-				return nil, err
-			}
-			return rsp.GetOutputStreamReader("tool", false, config), nil
-		}
 		config.coordinatorAICallback = warpedCb
 		config.taskAICallback = warpedCb
 		config.planAICallback = warpedCb
@@ -455,6 +590,7 @@ func WithMemory(m *Memory) Option {
 	return func(config *Config) error {
 		config.m.Lock()
 		defer config.m.Unlock()
+		m.ClearRuntimeConfig()
 		config.memory = m
 		return nil
 	}
@@ -519,10 +655,101 @@ func WithOmniSearchTool() Option {
 
 func WithAiToolsSearchTool() Option {
 	return func(config *Config) error {
-		config.enableToolSearch = true
+		config.m.Lock()
+		defer config.m.Unlock()
+		if config.aiToolManagerOption == nil {
+			config.aiToolManagerOption = make([]buildinaitools.ToolManagerOption, 0)
+		}
+		config.aiToolManagerOption = append(config.aiToolManagerOption,
+			buildinaitools.WithSearchEnabled(true))
 		return nil
 	}
 }
+
+func WithAiForgeSearchTool() Option {
+	return func(config *Config) error {
+		forgeSearchTools, err := searchtools.CreateAISearchTools(
+			func(query string, searchList []*schema.AIForge) ([]*schema.AIForge, error) {
+				keywords := omap.NewOrderedMap[string, []string](nil)
+				forgeMap := map[string]*schema.AIForge{}
+				for _, forge := range searchList {
+					keywords.Set(forge.GetName(), forge.GetKeywords())
+					forgeMap[forge.GetName()] = forge
+				}
+				searchResults, err := config.HandleSearch(query, keywords)
+				if err != nil {
+					return nil, err
+				}
+				forges := []*schema.AIForge{}
+				for _, result := range searchResults {
+					forges = append(forges, forgeMap[result.Tool])
+				}
+				return forges, nil
+			},
+			func() []*schema.AIForge {
+				forgeList, err := yakit.GetAllAIForge(consts.GetGormProfileDatabase())
+				if err != nil {
+					log.Errorf("yakit.GetAllAIForge: %v", err)
+					return nil
+				}
+				return forgeList
+			}, searchtools.SearchForgeName,
+		)
+		if err != nil {
+			return utils.Errorf("create ai forge search tools fail: %v", err)
+		}
+		return WithTools(forgeSearchTools...)(config)
+	}
+}
+
+func WithEnableToolsName(toolsName ...string) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+		if config.aiToolManagerOption == nil {
+			config.aiToolManagerOption = make([]buildinaitools.ToolManagerOption, 0)
+		}
+		config.aiToolManagerOption = append(config.aiToolManagerOption, buildinaitools.WithEnabledTools(toolsName))
+		return nil
+	}
+}
+
+func WithDisableToolsName(toolsName ...string) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+		if config.aiToolManagerOption == nil {
+			config.aiToolManagerOption = make([]buildinaitools.ToolManagerOption, 0)
+		}
+		config.aiToolManagerOption = append(config.aiToolManagerOption, buildinaitools.WithDisableTools(toolsName))
+		return nil
+	}
+}
+
+func WithTool(tool *aitool.Tool) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+		if config.aiToolManagerOption == nil {
+			config.aiToolManagerOption = make([]buildinaitools.ToolManagerOption, 0)
+		}
+		config.aiToolManagerOption = append(config.aiToolManagerOption, buildinaitools.WithExtendTools([]*aitool.Tool{tool}, true))
+		return nil
+	}
+}
+
+func WithTools(tool ...*aitool.Tool) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+		if config.aiToolManagerOption == nil {
+			config.aiToolManagerOption = make([]buildinaitools.ToolManagerOption, 0)
+		}
+		config.aiToolManagerOption = append(config.aiToolManagerOption, buildinaitools.WithExtendTools(tool, true))
+		return nil
+	}
+}
+
 func WithDebugPrompt(i ...bool) Option {
 	return func(config *Config) error {
 		config.m.Lock()
@@ -555,6 +782,21 @@ func WithEventInputChan(ch chan *InputEvent) Option {
 	}
 }
 
+func WithHotpatchOptionChanFactory(handle func() *chanx.UnlimitedChan[Option]) Option {
+	return func(config *Config) error {
+		return WithHotpatchOptionChan(handle())(config)
+	}
+}
+
+func WithHotpatchOptionChan(ch *chanx.UnlimitedChan[Option]) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+		config.hotpatchOptionChan = ch
+		return nil
+	}
+}
+
 func WithDebug(i ...bool) Option {
 	return func(config *Config) error {
 		config.m.Lock()
@@ -582,7 +824,15 @@ func WithAppendPersistentMemory(i ...string) Option {
 		config.m.Lock()
 		defer config.m.Unlock()
 		config.persistentMemory = append(config.persistentMemory, i...)
-		config.memory.StoreAppendPersistentInfo(i...)
+		return nil
+	}
+}
+
+func WithToolKeywords(i ...string) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+		config.keywords = append(config.keywords, i...)
 		return nil
 	}
 }
@@ -591,7 +841,7 @@ func WithTimeLineLimit(i int) Option {
 	return func(config *Config) error {
 		config.m.Lock()
 		defer config.m.Unlock()
-		config.timelineLimit = i
+		config.timelineRecordLimit = i
 		return nil
 	}
 }
@@ -600,7 +850,7 @@ func WithTimelineContentLimit(i int) Option {
 	return func(config *Config) error {
 		config.m.Lock()
 		defer config.m.Unlock()
-		config.timelineContentLimit = i
+		config.timelineContentSizeLimit = i
 		return nil
 	}
 }
@@ -624,14 +874,7 @@ func WithForgeParams(i any) Option {
 		buf.WriteString(aispec.ShrinkAndSafeToFile(i))
 		buf.WriteString("\n</user_input_" + nonce + ">\n")
 		// log.Infof("user nonce params: \n%v", buf.String())
-		config.memory.StoreAppendPersistentInfo(buf.String())
-
-		// if cli parameter not nil , should init user data
-		if params, ok := i.([]*ypb.ExecParamItem); ok {
-			if len(params) > 0 {
-				config.memory.StoreCliParameter(params)
-			}
-		}
+		config.memory.PushPersistentData(buf.String())
 		return nil
 	}
 }
@@ -652,6 +895,9 @@ func WithDisableToolUse(i ...bool) Option {
 
 func WithAIAutoRetry(t int) Option {
 	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
 		config.aiAutoRetry = int64(t)
 		return nil
 	}
@@ -659,6 +905,9 @@ func WithAIAutoRetry(t int) Option {
 
 func WithAITransactionRetry(t int) Option {
 	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
 		if t > 0 {
 			config.aiTransactionAutoRetry = int64(t)
 		}
@@ -666,9 +915,113 @@ func WithAITransactionRetry(t int) Option {
 	}
 }
 
-func WithRiskControlForgeName(forgeName string) Option {
+func WithRiskControlForgeName(forgeName string, callbackType AICallbackType) Option {
 	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
 		config.agreeRiskCtrl.buildinForgeName = forgeName
+		config.agreeRiskCtrl.buildinAICallback = callbackType
+		return nil
+	}
+}
+
+func WithGuardianEventTrigger(eventTrigger EventType, callback GuardianEventTrigger) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
+		if config.guardian == nil {
+			return utils.Error("BUG: guardian cannot be empty (ASYNC Guardian)")
+		}
+		return config.guardian.registerEventTrigger(eventTrigger, callback)
+	}
+}
+
+func WithGuardianMirrorStreamMirror(streamName string, callback GuardianMirrorStreamTrigger) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
+		if config.guardian == nil {
+			return utils.Error("BUG: guardian cannot be empty (ASYNC Guardian)")
+		}
+		return config.guardian.registerMirrorEventTrigger(streamName, callback)
+	}
+}
+
+func WithPromptHook(c func(string) string) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
+		config.promptHook = c
+		return nil
+	}
+}
+
+func WithGenerateReport(b bool) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
+		config.generateReport = b
+		return nil
+	}
+}
+
+func WithForgeName(forgeName string) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
+		config.forgeName = forgeName
+		return nil
+	}
+}
+
+func WithMaxTaskContinue(i int64) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
+		if i <= 0 {
+			i = 10
+		}
+		config.maxTaskContinue = i
+		return nil
+	}
+}
+
+func WithQwenNoThink() Option {
+	return WithPromptHook(func(origin string) string {
+		return origin + "/nothink"
+	})
+}
+
+func WithAllowPlanUserInteract(i ...bool) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
+		if len(i) > 0 {
+			config.allowPlanUserInteract = i[0]
+			return nil
+		}
+		config.allowPlanUserInteract = true
+		return nil
+	}
+}
+
+func WithPlanUserInteractMaxCount(i int64) Option {
+	return func(config *Config) error {
+		config.m.Lock()
+		defer config.m.Unlock()
+
+		if i <= 0 {
+			i = 3
+		}
+		config.planUserInteractMaxCount = i
 		return nil
 	}
 }

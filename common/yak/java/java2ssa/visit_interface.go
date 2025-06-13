@@ -18,9 +18,9 @@ func (y *builder) VisitInterfaceDeclaration(raw javaparser.IInterfaceDeclaration
 	}
 
 	name := i.Identifier().GetText()
-	bluePrint := y.CreateBlueprint(name, i.Identifier())
-	bluePrint.SetKind(ssa.BlueprintInterface)
-	y.GetProgram().SetExportType(name, bluePrint)
+	blueprint := y.CreateBlueprint(name, i.Identifier())
+	blueprint.SetKind(ssa.BlueprintInterface)
+	y.GetProgram().SetExportType(name, blueprint)
 	var extendNames []string
 	tokenMap := make(map[string]ssa.CanStartStopToken)
 	if i.EXTENDS() != nil {
@@ -31,7 +31,7 @@ func (y *builder) VisitInterfaceDeclaration(raw javaparser.IInterfaceDeclaration
 	}
 
 	store := y.StoreFunctionBuilder()
-	bluePrint.AddLazyBuilder(func() {
+	blueprint.AddLazyBuilder(func() {
 		switchHandler := y.SwitchFunctionBuilder(store)
 		defer switchHandler()
 
@@ -42,11 +42,15 @@ func (y *builder) VisitInterfaceDeclaration(raw javaparser.IInterfaceDeclaration
 				y.AddFullTypeNameForAllImport(extendName, bp)
 			}
 			bp.SetKind(ssa.BlueprintInterface)
-			bluePrint.AddParentBlueprint(bp)
+			blueprint.AddParentBlueprint(bp)
 		}
 	})
-	y.VisitInterfaceBody(i.InterfaceBody().(*javaparser.InterfaceBodyContext), bluePrint)
-	container := bluePrint.Container()
+	y.MarkedThisClassBlueprint = blueprint
+	defer func() {
+		y.MarkedThisClassBlueprint = nil
+	}()
+	y.VisitInterfaceBody(i.InterfaceBody().(*javaparser.InterfaceBodyContext), blueprint)
+	container := blueprint.Container()
 	return container
 }
 
@@ -150,6 +154,7 @@ func (y *builder) VisitInterfaceBody(c *javaparser.InterfaceBodyContext, this *s
 
 			fakeFunc := y.NewFunc(member.Identifier().GetText())
 			fakeFunc.SetMethodName(member.Identifier().GetText())
+			fakeFunc.Throws = y.VisitThrowsClause(member)
 			y.FunctionBuilder = y.PushFunction(fakeFunc)
 			thisPara := y.NewParam("this", raw)
 			thisPara.SetType(this)
@@ -277,9 +282,9 @@ func (y *builder) VisitConstantDeclarator(c *javaparser.ConstantDeclaratorContex
 		}
 		for i := 0; i < dim; i++ {
 			if m == nil {
-				m = y.EmitMakeWithoutType(y.EmitConstInst(0), y.EmitConstInst(0))
+				m = y.EmitMakeWithoutType(y.EmitConstInstPlaceholder(0), y.EmitConstInstPlaceholder(0))
 			} else {
-				m = y.EmitMakeSlice(m, y.EmitConstInst(0), y.EmitConstInst(0), y.EmitConstInst(0))
+				m = y.EmitMakeSlice(m, y.EmitConstInstPlaceholder(0), y.EmitConstInstPlaceholder(0), y.EmitConstInstPlaceholder(0))
 			}
 		}
 		if m != nil {

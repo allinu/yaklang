@@ -144,13 +144,13 @@ func QuerySyntaxFlowRuleNames(db *gorm.DB, filter *ypb.SyntaxFlowRuleFilter) ([]
 	return names, db.Error
 }
 
-func DeleteSyntaxFlowNonBuildInRule(db *gorm.DB, params *ypb.DeleteSyntaxFlowRuleRequest) (int64, error) {
+func DeleteSyntaxFlowRule(db *gorm.DB, params *ypb.DeleteSyntaxFlowRuleRequest) (int64, error) {
 	if params == nil || params.Filter == nil {
 		return 0, utils.Errorf("delete syntaxFlow rule failed: syntax flow filter is nil")
 	}
 	db = db.Model(&schema.SyntaxFlowRule{})
 	query := db
-	query = FilterSyntaxFlowRule(query, params.Filter, WithSyntaxFlowRuleBuiltin(false))
+	query = FilterSyntaxFlowRule(query, params.Filter)
 	// 如果filter包含groupName,FilterSyntaxFlowRule会使用联表查询，导致无法直接db.delete()
 	// 所以需要先查出来再删除
 	var ids []uint64
@@ -197,6 +197,7 @@ func UpdateSyntaxFlowRule(db *gorm.DB, rule *ypb.SyntaxFlowRuleInput) (*schema.S
 	updateRule.TitleZh = dbRule.TitleZh
 	updateRule.OpCodes = dbRule.OpCodes
 	updateRule.Hash = dbRule.CalcHash()
+
 	groups := sfdb.GetOrCreateGroups(consts.GetGormProfileDatabase(), rule.GetGroupNames())
 	if err := db.Model(&schema.SyntaxFlowRule{}).Update(&updateRule).Error; err != nil {
 		return nil, utils.Errorf("update syntaxFlow rule failed: %s", err)
@@ -236,6 +237,9 @@ func ParseSyntaxFlowInput(ruleInput *ypb.SyntaxFlowRuleInput) (*schema.SyntaxFlo
 	rule.Title = ruleInput.RuleName
 	//rule.Groups = sfdb.GetOrCreateGroups(consts.GetGormProfileDatabase(), ruleInput.GroupNames)
 	rule.Description = ruleInput.Description
+	for s, message := range ruleInput.AlertMsg {
+		rule.AlertDesc[s] = schema.ToSyntaxFlowAlertDesc(message)
+	}
 	return rule, nil
 }
 
@@ -245,4 +249,15 @@ func QueryBuildInRule(db *gorm.DB) []*schema.SyntaxFlowRule {
 	var rules []*schema.SyntaxFlowRule
 	db.Find(&rules)
 	return rules
+}
+
+func AllSyntaxFlowRule(db *gorm.DB, req *ypb.SyntaxFlowRuleFilter) ([]*schema.SyntaxFlowRule, error) {
+	db = db.Model(&schema.SyntaxFlowRule{})
+	db = FilterSyntaxFlowRule(db, req)
+	var ret []*schema.SyntaxFlowRule
+	db = db.Preload("Groups")
+	if err := db.Find(&ret).Error; err != nil {
+		return nil, utils.Errorf("query failed: %s", err)
+	}
+	return ret, nil
 }

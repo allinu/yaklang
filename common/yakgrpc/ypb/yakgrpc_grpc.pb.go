@@ -413,6 +413,14 @@ const (
 	Yak_UpdateFingerprint_FullMethodName                          = "/ypb.Yak/UpdateFingerprint"
 	Yak_CreateFingerprint_FullMethodName                          = "/ypb.Yak/CreateFingerprint"
 	Yak_RecoverBuiltinFingerprint_FullMethodName                  = "/ypb.Yak/RecoverBuiltinFingerprint"
+	Yak_CreateFingerprintGroup_FullMethodName                     = "/ypb.Yak/CreateFingerprintGroup"
+	Yak_GetAllFingerprintGroup_FullMethodName                     = "/ypb.Yak/GetAllFingerprintGroup"
+	Yak_RenameFingerprintGroup_FullMethodName                     = "/ypb.Yak/RenameFingerprintGroup"
+	Yak_DeleteFingerprintGroup_FullMethodName                     = "/ypb.Yak/DeleteFingerprintGroup"
+	Yak_BatchUpdateFingerprintToGroup_FullMethodName              = "/ypb.Yak/BatchUpdateFingerprintToGroup"
+	Yak_GetFingerprintGroupSetByFilter_FullMethodName             = "/ypb.Yak/GetFingerprintGroupSetByFilter"
+	Yak_ExportFingerprint_FullMethodName                          = "/ypb.Yak/ExportFingerprint"
+	Yak_ImportFingerprint_FullMethodName                          = "/ypb.Yak/ImportFingerprint"
 	Yak_GetReverseShellProgramList_FullMethodName                 = "/ypb.Yak/GetReverseShellProgramList"
 	Yak_GenerateReverseShellCommand_FullMethodName                = "/ypb.Yak/GenerateReverseShellCommand"
 	Yak_QuerySyntaxFlowRule_FullMethodName                        = "/ypb.Yak/QuerySyntaxFlowRule"
@@ -429,6 +437,8 @@ const (
 	Yak_UpdateSyntaxFlowRuleGroup_FullMethodName                  = "/ypb.Yak/UpdateSyntaxFlowRuleGroup"
 	Yak_UpdateSyntaxFlowRuleAndGroup_FullMethodName               = "/ypb.Yak/UpdateSyntaxFlowRuleAndGroup"
 	Yak_QuerySyntaxFlowSameGroup_FullMethodName                   = "/ypb.Yak/QuerySyntaxFlowSameGroup"
+	Yak_SyntaxFlowRuleToOnline_FullMethodName                     = "/ypb.Yak/SyntaxFlowRuleToOnline"
+	Yak_DownloadSyntaxFlowRule_FullMethodName                     = "/ypb.Yak/DownloadSyntaxFlowRule"
 	Yak_SyntaxFlowScan_FullMethodName                             = "/ypb.Yak/SyntaxFlowScan"
 	Yak_QuerySyntaxFlowScanTask_FullMethodName                    = "/ypb.Yak/QuerySyntaxFlowScanTask"
 	Yak_DeleteSyntaxFlowScanTask_FullMethodName                   = "/ypb.Yak/DeleteSyntaxFlowScanTask"
@@ -474,6 +484,18 @@ const (
 	Yak_ImportNote_FullMethodName                                 = "/ypb.Yak/ImportNote"
 	Yak_ExportNote_FullMethodName                                 = "/ypb.Yak/ExportNote"
 	Yak_StartAITask_FullMethodName                                = "/ypb.Yak/StartAITask"
+	Yak_QueryAITask_FullMethodName                                = "/ypb.Yak/QueryAITask"
+	Yak_StartAITriage_FullMethodName                              = "/ypb.Yak/StartAITriage"
+	Yak_CreateAIForge_FullMethodName                              = "/ypb.Yak/CreateAIForge"
+	Yak_UpdateAIForge_FullMethodName                              = "/ypb.Yak/UpdateAIForge"
+	Yak_DeleteAIForge_FullMethodName                              = "/ypb.Yak/DeleteAIForge"
+	Yak_QueryAIForge_FullMethodName                               = "/ypb.Yak/QueryAIForge"
+	Yak_StartMcpServer_FullMethodName                             = "/ypb.Yak/StartMcpServer"
+	Yak_GetToolSetList_FullMethodName                             = "/ypb.Yak/GetToolSetList"
+	Yak_GetAIToolList_FullMethodName                              = "/ypb.Yak/GetAIToolList"
+	Yak_DeleteAITool_FullMethodName                               = "/ypb.Yak/DeleteAITool"
+	Yak_SaveAITool_FullMethodName                                 = "/ypb.Yak/SaveAITool"
+	Yak_AIToolGenerateMetadata_FullMethodName                     = "/ypb.Yak/AIToolGenerateMetadata"
 )
 
 // YakClient is the client API for Yak service.
@@ -990,6 +1012,16 @@ type YakClient interface {
 	UpdateFingerprint(ctx context.Context, in *UpdateFingerprintRequest, opts ...grpc.CallOption) (*DbOperateMessage, error)
 	CreateFingerprint(ctx context.Context, in *CreateFingerprintRequest, opts ...grpc.CallOption) (*DbOperateMessage, error)
 	RecoverBuiltinFingerprint(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*DbOperateMessage, error)
+	CreateFingerprintGroup(ctx context.Context, in *FingerprintGroup, opts ...grpc.CallOption) (*DbOperateMessage, error)
+	GetAllFingerprintGroup(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*FingerprintGroups, error)
+	RenameFingerprintGroup(ctx context.Context, in *RenameFingerprintGroupRequest, opts ...grpc.CallOption) (*DbOperateMessage, error)
+	DeleteFingerprintGroup(ctx context.Context, in *DeleteFingerprintGroupRequest, opts ...grpc.CallOption) (*DbOperateMessage, error)
+	// 指纹 与 组 工具接口
+	BatchUpdateFingerprintToGroup(ctx context.Context, in *BatchUpdateFingerprintToGroupRequest, opts ...grpc.CallOption) (*DbOperateMessage, error)
+	GetFingerprintGroupSetByFilter(ctx context.Context, in *GetFingerprintGroupSetRequest, opts ...grpc.CallOption) (*FingerprintGroups, error)
+	// 导入导出指纹
+	ExportFingerprint(ctx context.Context, in *ExportFingerprintRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DataTransferProgress], error)
+	ImportFingerprint(ctx context.Context, in *ImportFingerprintRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DataTransferProgress], error)
 	// 反弹shell命令生成
 	GetReverseShellProgramList(ctx context.Context, in *GetReverseShellProgramListRequest, opts ...grpc.CallOption) (*GetReverseShellProgramListResponse, error)
 	GenerateReverseShellCommand(ctx context.Context, in *GenerateReverseShellCommandRequest, opts ...grpc.CallOption) (*GenerateReverseShellCommandResponse, error)
@@ -1010,6 +1042,8 @@ type YakClient interface {
 	UpdateSyntaxFlowRuleAndGroup(ctx context.Context, in *UpdateSyntaxFlowRuleAndGroupRequest, opts ...grpc.CallOption) (*DbOperateMessage, error)
 	// 查找多个规则的交集组，一个规则则为其组本身
 	QuerySyntaxFlowSameGroup(ctx context.Context, in *QuerySyntaxFlowSameGroupRequest, opts ...grpc.CallOption) (*QuerySyntaxFlowSameGroupResponse, error)
+	SyntaxFlowRuleToOnline(ctx context.Context, in *SyntaxFlowRuleToOnlineRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SyntaxFlowRuleOnlineProgress], error)
+	DownloadSyntaxFlowRule(ctx context.Context, in *DownloadSyntaxFlowRuleRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SyntaxFlowRuleOnlineProgress], error)
 	// syntaxflow scan
 	SyntaxFlowScan(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[SyntaxFlowScanRequest, SyntaxFlowScanResponse], error)
 	QuerySyntaxFlowScanTask(ctx context.Context, in *QuerySyntaxFlowScanTaskRequest, opts ...grpc.CallOption) (*QuerySyntaxFlowScanTaskResponse, error)
@@ -1064,7 +1098,22 @@ type YakClient interface {
 	SearchNoteContent(ctx context.Context, in *SearchNoteContentRequest, opts ...grpc.CallOption) (*SearchNoteContentResponse, error)
 	ImportNote(ctx context.Context, in *ImportNoteRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ImportNoteResponse], error)
 	ExportNote(ctx context.Context, in *ExportNoteRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ExportNoteResponse], error)
+	// AI Task
 	StartAITask(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AIInputEvent, AIOutputEvent], error)
+	QueryAITask(ctx context.Context, in *AITaskQueryRequest, opts ...grpc.CallOption) (*AITaskQueryResponse, error)
+	StartAITriage(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AITriageInputEvent, AIOutputEvent], error)
+	// AI forge curd
+	CreateAIForge(ctx context.Context, in *AIForge, opts ...grpc.CallOption) (*DbOperateMessage, error)
+	UpdateAIForge(ctx context.Context, in *AIForge, opts ...grpc.CallOption) (*DbOperateMessage, error)
+	DeleteAIForge(ctx context.Context, in *AIForgeFilter, opts ...grpc.CallOption) (*DbOperateMessage, error)
+	QueryAIForge(ctx context.Context, in *QueryAIForgeRequest, opts ...grpc.CallOption) (*QueryAIForgeResponse, error)
+	// mcp server
+	StartMcpServer(ctx context.Context, in *StartMcpServerRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StartMcpServerResponse], error)
+	GetToolSetList(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*GetToolSetListResponse, error)
+	GetAIToolList(ctx context.Context, in *GetAIToolListRequest, opts ...grpc.CallOption) (*GetAIToolListResponse, error)
+	DeleteAITool(ctx context.Context, in *DeleteAIToolRequest, opts ...grpc.CallOption) (*DbOperateMessage, error)
+	SaveAITool(ctx context.Context, in *SaveAIToolRequest, opts ...grpc.CallOption) (*DbOperateMessage, error)
+	AIToolGenerateMetadata(ctx context.Context, in *AIToolGenerateMetadataRequest, opts ...grpc.CallOption) (*AIToolGenerateMetadataResponse, error)
 }
 
 type yakClient struct {
@@ -5588,6 +5637,104 @@ func (c *yakClient) RecoverBuiltinFingerprint(ctx context.Context, in *Empty, op
 	return out, nil
 }
 
+func (c *yakClient) CreateFingerprintGroup(ctx context.Context, in *FingerprintGroup, opts ...grpc.CallOption) (*DbOperateMessage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DbOperateMessage)
+	err := c.cc.Invoke(ctx, Yak_CreateFingerprintGroup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *yakClient) GetAllFingerprintGroup(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*FingerprintGroups, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FingerprintGroups)
+	err := c.cc.Invoke(ctx, Yak_GetAllFingerprintGroup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *yakClient) RenameFingerprintGroup(ctx context.Context, in *RenameFingerprintGroupRequest, opts ...grpc.CallOption) (*DbOperateMessage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DbOperateMessage)
+	err := c.cc.Invoke(ctx, Yak_RenameFingerprintGroup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *yakClient) DeleteFingerprintGroup(ctx context.Context, in *DeleteFingerprintGroupRequest, opts ...grpc.CallOption) (*DbOperateMessage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DbOperateMessage)
+	err := c.cc.Invoke(ctx, Yak_DeleteFingerprintGroup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *yakClient) BatchUpdateFingerprintToGroup(ctx context.Context, in *BatchUpdateFingerprintToGroupRequest, opts ...grpc.CallOption) (*DbOperateMessage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DbOperateMessage)
+	err := c.cc.Invoke(ctx, Yak_BatchUpdateFingerprintToGroup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *yakClient) GetFingerprintGroupSetByFilter(ctx context.Context, in *GetFingerprintGroupSetRequest, opts ...grpc.CallOption) (*FingerprintGroups, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FingerprintGroups)
+	err := c.cc.Invoke(ctx, Yak_GetFingerprintGroupSetByFilter_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *yakClient) ExportFingerprint(ctx context.Context, in *ExportFingerprintRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DataTransferProgress], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[71], Yak_ExportFingerprint_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[ExportFingerprintRequest, DataTransferProgress]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Yak_ExportFingerprintClient = grpc.ServerStreamingClient[DataTransferProgress]
+
+func (c *yakClient) ImportFingerprint(ctx context.Context, in *ImportFingerprintRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DataTransferProgress], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[72], Yak_ImportFingerprint_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[ImportFingerprintRequest, DataTransferProgress]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Yak_ImportFingerprintClient = grpc.ServerStreamingClient[DataTransferProgress]
+
 func (c *yakClient) GetReverseShellProgramList(ctx context.Context, in *GetReverseShellProgramListRequest, opts ...grpc.CallOption) (*GetReverseShellProgramListResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetReverseShellProgramListResponse)
@@ -5680,7 +5827,7 @@ func (c *yakClient) CheckSyntaxFlowRuleUpdate(ctx context.Context, in *CheckSynt
 
 func (c *yakClient) ApplySyntaxFlowRuleUpdate(ctx context.Context, in *ApplySyntaxFlowRuleUpdateRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ApplySyntaxFlowRuleUpdateResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[71], Yak_ApplySyntaxFlowRuleUpdate_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[73], Yak_ApplySyntaxFlowRuleUpdate_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -5757,9 +5904,47 @@ func (c *yakClient) QuerySyntaxFlowSameGroup(ctx context.Context, in *QuerySynta
 	return out, nil
 }
 
+func (c *yakClient) SyntaxFlowRuleToOnline(ctx context.Context, in *SyntaxFlowRuleToOnlineRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SyntaxFlowRuleOnlineProgress], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[74], Yak_SyntaxFlowRuleToOnline_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[SyntaxFlowRuleToOnlineRequest, SyntaxFlowRuleOnlineProgress]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Yak_SyntaxFlowRuleToOnlineClient = grpc.ServerStreamingClient[SyntaxFlowRuleOnlineProgress]
+
+func (c *yakClient) DownloadSyntaxFlowRule(ctx context.Context, in *DownloadSyntaxFlowRuleRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SyntaxFlowRuleOnlineProgress], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[75], Yak_DownloadSyntaxFlowRule_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[DownloadSyntaxFlowRuleRequest, SyntaxFlowRuleOnlineProgress]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Yak_DownloadSyntaxFlowRuleClient = grpc.ServerStreamingClient[SyntaxFlowRuleOnlineProgress]
+
 func (c *yakClient) SyntaxFlowScan(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[SyntaxFlowScanRequest, SyntaxFlowScanResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[72], Yak_SyntaxFlowScan_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[76], Yak_SyntaxFlowScan_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -5982,7 +6167,7 @@ func (c *yakClient) GenerateFuzztag(ctx context.Context, in *GenerateFuzztagRequ
 
 func (c *yakClient) ExportSyntaxFlows(ctx context.Context, in *ExportSyntaxFlowsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SyntaxflowsProgress], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[73], Yak_ExportSyntaxFlows_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[77], Yak_ExportSyntaxFlows_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -6001,7 +6186,7 @@ type Yak_ExportSyntaxFlowsClient = grpc.ServerStreamingClient[SyntaxflowsProgres
 
 func (c *yakClient) ImportSyntaxFlows(ctx context.Context, in *ImportSyntaxFlowsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SyntaxflowsProgress], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[74], Yak_ImportSyntaxFlows_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[78], Yak_ImportSyntaxFlows_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -6130,7 +6315,7 @@ func (c *yakClient) ResetMITMHijackFilter(ctx context.Context, in *Empty, opts .
 
 func (c *yakClient) ExportHTTPFlowStream(ctx context.Context, in *ExportHTTPFlowStreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ExportHTTPFlowStreamResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[75], Yak_ExportHTTPFlowStream_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[79], Yak_ExportHTTPFlowStream_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -6149,7 +6334,7 @@ type Yak_ExportHTTPFlowStreamClient = grpc.ServerStreamingClient[ExportHTTPFlowS
 
 func (c *yakClient) ImportHTTPFlowStream(ctx context.Context, in *ImportHTTPFlowStreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ImportHTTPFlowStreamResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[76], Yak_ImportHTTPFlowStream_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[80], Yak_ImportHTTPFlowStream_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -6218,7 +6403,7 @@ func (c *yakClient) SearchNoteContent(ctx context.Context, in *SearchNoteContent
 
 func (c *yakClient) ImportNote(ctx context.Context, in *ImportNoteRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ImportNoteResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[77], Yak_ImportNote_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[81], Yak_ImportNote_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -6237,7 +6422,7 @@ type Yak_ImportNoteClient = grpc.ServerStreamingClient[ImportNoteResponse]
 
 func (c *yakClient) ExportNote(ctx context.Context, in *ExportNoteRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ExportNoteResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[78], Yak_ExportNote_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[82], Yak_ExportNote_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -6256,7 +6441,7 @@ type Yak_ExportNoteClient = grpc.ServerStreamingClient[ExportNoteResponse]
 
 func (c *yakClient) StartAITask(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AIInputEvent, AIOutputEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[79], Yak_StartAITask_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[83], Yak_StartAITask_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -6266,6 +6451,138 @@ func (c *yakClient) StartAITask(ctx context.Context, opts ...grpc.CallOption) (g
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Yak_StartAITaskClient = grpc.BidiStreamingClient[AIInputEvent, AIOutputEvent]
+
+func (c *yakClient) QueryAITask(ctx context.Context, in *AITaskQueryRequest, opts ...grpc.CallOption) (*AITaskQueryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AITaskQueryResponse)
+	err := c.cc.Invoke(ctx, Yak_QueryAITask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *yakClient) StartAITriage(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AITriageInputEvent, AIOutputEvent], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[84], Yak_StartAITriage_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[AITriageInputEvent, AIOutputEvent]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Yak_StartAITriageClient = grpc.BidiStreamingClient[AITriageInputEvent, AIOutputEvent]
+
+func (c *yakClient) CreateAIForge(ctx context.Context, in *AIForge, opts ...grpc.CallOption) (*DbOperateMessage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DbOperateMessage)
+	err := c.cc.Invoke(ctx, Yak_CreateAIForge_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *yakClient) UpdateAIForge(ctx context.Context, in *AIForge, opts ...grpc.CallOption) (*DbOperateMessage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DbOperateMessage)
+	err := c.cc.Invoke(ctx, Yak_UpdateAIForge_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *yakClient) DeleteAIForge(ctx context.Context, in *AIForgeFilter, opts ...grpc.CallOption) (*DbOperateMessage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DbOperateMessage)
+	err := c.cc.Invoke(ctx, Yak_DeleteAIForge_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *yakClient) QueryAIForge(ctx context.Context, in *QueryAIForgeRequest, opts ...grpc.CallOption) (*QueryAIForgeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(QueryAIForgeResponse)
+	err := c.cc.Invoke(ctx, Yak_QueryAIForge_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *yakClient) StartMcpServer(ctx context.Context, in *StartMcpServerRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StartMcpServerResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Yak_ServiceDesc.Streams[85], Yak_StartMcpServer_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[StartMcpServerRequest, StartMcpServerResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Yak_StartMcpServerClient = grpc.ServerStreamingClient[StartMcpServerResponse]
+
+func (c *yakClient) GetToolSetList(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*GetToolSetListResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetToolSetListResponse)
+	err := c.cc.Invoke(ctx, Yak_GetToolSetList_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *yakClient) GetAIToolList(ctx context.Context, in *GetAIToolListRequest, opts ...grpc.CallOption) (*GetAIToolListResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAIToolListResponse)
+	err := c.cc.Invoke(ctx, Yak_GetAIToolList_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *yakClient) DeleteAITool(ctx context.Context, in *DeleteAIToolRequest, opts ...grpc.CallOption) (*DbOperateMessage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DbOperateMessage)
+	err := c.cc.Invoke(ctx, Yak_DeleteAITool_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *yakClient) SaveAITool(ctx context.Context, in *SaveAIToolRequest, opts ...grpc.CallOption) (*DbOperateMessage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DbOperateMessage)
+	err := c.cc.Invoke(ctx, Yak_SaveAITool_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *yakClient) AIToolGenerateMetadata(ctx context.Context, in *AIToolGenerateMetadataRequest, opts ...grpc.CallOption) (*AIToolGenerateMetadataResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AIToolGenerateMetadataResponse)
+	err := c.cc.Invoke(ctx, Yak_AIToolGenerateMetadata_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
 
 // YakServer is the server API for Yak service.
 // All implementations must embed UnimplementedYakServer
@@ -6781,6 +7098,16 @@ type YakServer interface {
 	UpdateFingerprint(context.Context, *UpdateFingerprintRequest) (*DbOperateMessage, error)
 	CreateFingerprint(context.Context, *CreateFingerprintRequest) (*DbOperateMessage, error)
 	RecoverBuiltinFingerprint(context.Context, *Empty) (*DbOperateMessage, error)
+	CreateFingerprintGroup(context.Context, *FingerprintGroup) (*DbOperateMessage, error)
+	GetAllFingerprintGroup(context.Context, *Empty) (*FingerprintGroups, error)
+	RenameFingerprintGroup(context.Context, *RenameFingerprintGroupRequest) (*DbOperateMessage, error)
+	DeleteFingerprintGroup(context.Context, *DeleteFingerprintGroupRequest) (*DbOperateMessage, error)
+	// 指纹 与 组 工具接口
+	BatchUpdateFingerprintToGroup(context.Context, *BatchUpdateFingerprintToGroupRequest) (*DbOperateMessage, error)
+	GetFingerprintGroupSetByFilter(context.Context, *GetFingerprintGroupSetRequest) (*FingerprintGroups, error)
+	// 导入导出指纹
+	ExportFingerprint(*ExportFingerprintRequest, grpc.ServerStreamingServer[DataTransferProgress]) error
+	ImportFingerprint(*ImportFingerprintRequest, grpc.ServerStreamingServer[DataTransferProgress]) error
 	// 反弹shell命令生成
 	GetReverseShellProgramList(context.Context, *GetReverseShellProgramListRequest) (*GetReverseShellProgramListResponse, error)
 	GenerateReverseShellCommand(context.Context, *GenerateReverseShellCommandRequest) (*GenerateReverseShellCommandResponse, error)
@@ -6801,6 +7128,8 @@ type YakServer interface {
 	UpdateSyntaxFlowRuleAndGroup(context.Context, *UpdateSyntaxFlowRuleAndGroupRequest) (*DbOperateMessage, error)
 	// 查找多个规则的交集组，一个规则则为其组本身
 	QuerySyntaxFlowSameGroup(context.Context, *QuerySyntaxFlowSameGroupRequest) (*QuerySyntaxFlowSameGroupResponse, error)
+	SyntaxFlowRuleToOnline(*SyntaxFlowRuleToOnlineRequest, grpc.ServerStreamingServer[SyntaxFlowRuleOnlineProgress]) error
+	DownloadSyntaxFlowRule(*DownloadSyntaxFlowRuleRequest, grpc.ServerStreamingServer[SyntaxFlowRuleOnlineProgress]) error
 	// syntaxflow scan
 	SyntaxFlowScan(grpc.BidiStreamingServer[SyntaxFlowScanRequest, SyntaxFlowScanResponse]) error
 	QuerySyntaxFlowScanTask(context.Context, *QuerySyntaxFlowScanTaskRequest) (*QuerySyntaxFlowScanTaskResponse, error)
@@ -6855,7 +7184,22 @@ type YakServer interface {
 	SearchNoteContent(context.Context, *SearchNoteContentRequest) (*SearchNoteContentResponse, error)
 	ImportNote(*ImportNoteRequest, grpc.ServerStreamingServer[ImportNoteResponse]) error
 	ExportNote(*ExportNoteRequest, grpc.ServerStreamingServer[ExportNoteResponse]) error
+	// AI Task
 	StartAITask(grpc.BidiStreamingServer[AIInputEvent, AIOutputEvent]) error
+	QueryAITask(context.Context, *AITaskQueryRequest) (*AITaskQueryResponse, error)
+	StartAITriage(grpc.BidiStreamingServer[AITriageInputEvent, AIOutputEvent]) error
+	// AI forge curd
+	CreateAIForge(context.Context, *AIForge) (*DbOperateMessage, error)
+	UpdateAIForge(context.Context, *AIForge) (*DbOperateMessage, error)
+	DeleteAIForge(context.Context, *AIForgeFilter) (*DbOperateMessage, error)
+	QueryAIForge(context.Context, *QueryAIForgeRequest) (*QueryAIForgeResponse, error)
+	// mcp server
+	StartMcpServer(*StartMcpServerRequest, grpc.ServerStreamingServer[StartMcpServerResponse]) error
+	GetToolSetList(context.Context, *Empty) (*GetToolSetListResponse, error)
+	GetAIToolList(context.Context, *GetAIToolListRequest) (*GetAIToolListResponse, error)
+	DeleteAITool(context.Context, *DeleteAIToolRequest) (*DbOperateMessage, error)
+	SaveAITool(context.Context, *SaveAIToolRequest) (*DbOperateMessage, error)
+	AIToolGenerateMetadata(context.Context, *AIToolGenerateMetadataRequest) (*AIToolGenerateMetadataResponse, error)
 	mustEmbedUnimplementedYakServer()
 }
 
@@ -8048,6 +8392,30 @@ func (UnimplementedYakServer) CreateFingerprint(context.Context, *CreateFingerpr
 func (UnimplementedYakServer) RecoverBuiltinFingerprint(context.Context, *Empty) (*DbOperateMessage, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RecoverBuiltinFingerprint not implemented")
 }
+func (UnimplementedYakServer) CreateFingerprintGroup(context.Context, *FingerprintGroup) (*DbOperateMessage, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateFingerprintGroup not implemented")
+}
+func (UnimplementedYakServer) GetAllFingerprintGroup(context.Context, *Empty) (*FingerprintGroups, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetAllFingerprintGroup not implemented")
+}
+func (UnimplementedYakServer) RenameFingerprintGroup(context.Context, *RenameFingerprintGroupRequest) (*DbOperateMessage, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RenameFingerprintGroup not implemented")
+}
+func (UnimplementedYakServer) DeleteFingerprintGroup(context.Context, *DeleteFingerprintGroupRequest) (*DbOperateMessage, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteFingerprintGroup not implemented")
+}
+func (UnimplementedYakServer) BatchUpdateFingerprintToGroup(context.Context, *BatchUpdateFingerprintToGroupRequest) (*DbOperateMessage, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BatchUpdateFingerprintToGroup not implemented")
+}
+func (UnimplementedYakServer) GetFingerprintGroupSetByFilter(context.Context, *GetFingerprintGroupSetRequest) (*FingerprintGroups, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetFingerprintGroupSetByFilter not implemented")
+}
+func (UnimplementedYakServer) ExportFingerprint(*ExportFingerprintRequest, grpc.ServerStreamingServer[DataTransferProgress]) error {
+	return status.Errorf(codes.Unimplemented, "method ExportFingerprint not implemented")
+}
+func (UnimplementedYakServer) ImportFingerprint(*ImportFingerprintRequest, grpc.ServerStreamingServer[DataTransferProgress]) error {
+	return status.Errorf(codes.Unimplemented, "method ImportFingerprint not implemented")
+}
 func (UnimplementedYakServer) GetReverseShellProgramList(context.Context, *GetReverseShellProgramListRequest) (*GetReverseShellProgramListResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetReverseShellProgramList not implemented")
 }
@@ -8095,6 +8463,12 @@ func (UnimplementedYakServer) UpdateSyntaxFlowRuleAndGroup(context.Context, *Upd
 }
 func (UnimplementedYakServer) QuerySyntaxFlowSameGroup(context.Context, *QuerySyntaxFlowSameGroupRequest) (*QuerySyntaxFlowSameGroupResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method QuerySyntaxFlowSameGroup not implemented")
+}
+func (UnimplementedYakServer) SyntaxFlowRuleToOnline(*SyntaxFlowRuleToOnlineRequest, grpc.ServerStreamingServer[SyntaxFlowRuleOnlineProgress]) error {
+	return status.Errorf(codes.Unimplemented, "method SyntaxFlowRuleToOnline not implemented")
+}
+func (UnimplementedYakServer) DownloadSyntaxFlowRule(*DownloadSyntaxFlowRuleRequest, grpc.ServerStreamingServer[SyntaxFlowRuleOnlineProgress]) error {
+	return status.Errorf(codes.Unimplemented, "method DownloadSyntaxFlowRule not implemented")
 }
 func (UnimplementedYakServer) SyntaxFlowScan(grpc.BidiStreamingServer[SyntaxFlowScanRequest, SyntaxFlowScanResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method SyntaxFlowScan not implemented")
@@ -8230,6 +8604,42 @@ func (UnimplementedYakServer) ExportNote(*ExportNoteRequest, grpc.ServerStreamin
 }
 func (UnimplementedYakServer) StartAITask(grpc.BidiStreamingServer[AIInputEvent, AIOutputEvent]) error {
 	return status.Errorf(codes.Unimplemented, "method StartAITask not implemented")
+}
+func (UnimplementedYakServer) QueryAITask(context.Context, *AITaskQueryRequest) (*AITaskQueryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method QueryAITask not implemented")
+}
+func (UnimplementedYakServer) StartAITriage(grpc.BidiStreamingServer[AITriageInputEvent, AIOutputEvent]) error {
+	return status.Errorf(codes.Unimplemented, "method StartAITriage not implemented")
+}
+func (UnimplementedYakServer) CreateAIForge(context.Context, *AIForge) (*DbOperateMessage, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateAIForge not implemented")
+}
+func (UnimplementedYakServer) UpdateAIForge(context.Context, *AIForge) (*DbOperateMessage, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateAIForge not implemented")
+}
+func (UnimplementedYakServer) DeleteAIForge(context.Context, *AIForgeFilter) (*DbOperateMessage, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteAIForge not implemented")
+}
+func (UnimplementedYakServer) QueryAIForge(context.Context, *QueryAIForgeRequest) (*QueryAIForgeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method QueryAIForge not implemented")
+}
+func (UnimplementedYakServer) StartMcpServer(*StartMcpServerRequest, grpc.ServerStreamingServer[StartMcpServerResponse]) error {
+	return status.Errorf(codes.Unimplemented, "method StartMcpServer not implemented")
+}
+func (UnimplementedYakServer) GetToolSetList(context.Context, *Empty) (*GetToolSetListResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetToolSetList not implemented")
+}
+func (UnimplementedYakServer) GetAIToolList(context.Context, *GetAIToolListRequest) (*GetAIToolListResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetAIToolList not implemented")
+}
+func (UnimplementedYakServer) DeleteAITool(context.Context, *DeleteAIToolRequest) (*DbOperateMessage, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteAITool not implemented")
+}
+func (UnimplementedYakServer) SaveAITool(context.Context, *SaveAIToolRequest) (*DbOperateMessage, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SaveAITool not implemented")
+}
+func (UnimplementedYakServer) AIToolGenerateMetadata(context.Context, *AIToolGenerateMetadataRequest) (*AIToolGenerateMetadataResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AIToolGenerateMetadata not implemented")
 }
 func (UnimplementedYakServer) mustEmbedUnimplementedYakServer() {}
 func (UnimplementedYakServer) testEmbeddedByValue()             {}
@@ -14803,6 +15213,136 @@ func _Yak_RecoverBuiltinFingerprint_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Yak_CreateFingerprintGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FingerprintGroup)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(YakServer).CreateFingerprintGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Yak_CreateFingerprintGroup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(YakServer).CreateFingerprintGroup(ctx, req.(*FingerprintGroup))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Yak_GetAllFingerprintGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(YakServer).GetAllFingerprintGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Yak_GetAllFingerprintGroup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(YakServer).GetAllFingerprintGroup(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Yak_RenameFingerprintGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RenameFingerprintGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(YakServer).RenameFingerprintGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Yak_RenameFingerprintGroup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(YakServer).RenameFingerprintGroup(ctx, req.(*RenameFingerprintGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Yak_DeleteFingerprintGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteFingerprintGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(YakServer).DeleteFingerprintGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Yak_DeleteFingerprintGroup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(YakServer).DeleteFingerprintGroup(ctx, req.(*DeleteFingerprintGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Yak_BatchUpdateFingerprintToGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BatchUpdateFingerprintToGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(YakServer).BatchUpdateFingerprintToGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Yak_BatchUpdateFingerprintToGroup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(YakServer).BatchUpdateFingerprintToGroup(ctx, req.(*BatchUpdateFingerprintToGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Yak_GetFingerprintGroupSetByFilter_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetFingerprintGroupSetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(YakServer).GetFingerprintGroupSetByFilter(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Yak_GetFingerprintGroupSetByFilter_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(YakServer).GetFingerprintGroupSetByFilter(ctx, req.(*GetFingerprintGroupSetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Yak_ExportFingerprint_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(ExportFingerprintRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(YakServer).ExportFingerprint(m, &grpc.GenericServerStream[ExportFingerprintRequest, DataTransferProgress]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Yak_ExportFingerprintServer = grpc.ServerStreamingServer[DataTransferProgress]
+
+func _Yak_ImportFingerprint_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(ImportFingerprintRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(YakServer).ImportFingerprint(m, &grpc.GenericServerStream[ImportFingerprintRequest, DataTransferProgress]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Yak_ImportFingerprintServer = grpc.ServerStreamingServer[DataTransferProgress]
+
 func _Yak_GetReverseShellProgramList_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetReverseShellProgramListRequest)
 	if err := dec(in); err != nil {
@@ -15083,6 +15623,28 @@ func _Yak_QuerySyntaxFlowSameGroup_Handler(srv interface{}, ctx context.Context,
 	}
 	return interceptor(ctx, in, info, handler)
 }
+
+func _Yak_SyntaxFlowRuleToOnline_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(SyntaxFlowRuleToOnlineRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(YakServer).SyntaxFlowRuleToOnline(m, &grpc.GenericServerStream[SyntaxFlowRuleToOnlineRequest, SyntaxFlowRuleOnlineProgress]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Yak_SyntaxFlowRuleToOnlineServer = grpc.ServerStreamingServer[SyntaxFlowRuleOnlineProgress]
+
+func _Yak_DownloadSyntaxFlowRule_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(DownloadSyntaxFlowRuleRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(YakServer).DownloadSyntaxFlowRule(m, &grpc.GenericServerStream[DownloadSyntaxFlowRuleRequest, SyntaxFlowRuleOnlineProgress]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Yak_DownloadSyntaxFlowRuleServer = grpc.ServerStreamingServer[SyntaxFlowRuleOnlineProgress]
 
 func _Yak_SyntaxFlowScan_Handler(srv interface{}, stream grpc.ServerStream) error {
 	return srv.(YakServer).SyntaxFlowScan(&grpc.GenericServerStream[SyntaxFlowScanRequest, SyntaxFlowScanResponse]{ServerStream: stream})
@@ -15829,6 +16391,204 @@ func _Yak_StartAITask_Handler(srv interface{}, stream grpc.ServerStream) error {
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Yak_StartAITaskServer = grpc.BidiStreamingServer[AIInputEvent, AIOutputEvent]
+
+func _Yak_QueryAITask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AITaskQueryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(YakServer).QueryAITask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Yak_QueryAITask_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(YakServer).QueryAITask(ctx, req.(*AITaskQueryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Yak_StartAITriage_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(YakServer).StartAITriage(&grpc.GenericServerStream[AITriageInputEvent, AIOutputEvent]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Yak_StartAITriageServer = grpc.BidiStreamingServer[AITriageInputEvent, AIOutputEvent]
+
+func _Yak_CreateAIForge_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AIForge)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(YakServer).CreateAIForge(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Yak_CreateAIForge_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(YakServer).CreateAIForge(ctx, req.(*AIForge))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Yak_UpdateAIForge_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AIForge)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(YakServer).UpdateAIForge(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Yak_UpdateAIForge_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(YakServer).UpdateAIForge(ctx, req.(*AIForge))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Yak_DeleteAIForge_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AIForgeFilter)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(YakServer).DeleteAIForge(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Yak_DeleteAIForge_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(YakServer).DeleteAIForge(ctx, req.(*AIForgeFilter))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Yak_QueryAIForge_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryAIForgeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(YakServer).QueryAIForge(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Yak_QueryAIForge_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(YakServer).QueryAIForge(ctx, req.(*QueryAIForgeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Yak_StartMcpServer_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(StartMcpServerRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(YakServer).StartMcpServer(m, &grpc.GenericServerStream[StartMcpServerRequest, StartMcpServerResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Yak_StartMcpServerServer = grpc.ServerStreamingServer[StartMcpServerResponse]
+
+func _Yak_GetToolSetList_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(YakServer).GetToolSetList(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Yak_GetToolSetList_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(YakServer).GetToolSetList(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Yak_GetAIToolList_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAIToolListRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(YakServer).GetAIToolList(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Yak_GetAIToolList_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(YakServer).GetAIToolList(ctx, req.(*GetAIToolListRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Yak_DeleteAITool_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteAIToolRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(YakServer).DeleteAITool(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Yak_DeleteAITool_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(YakServer).DeleteAITool(ctx, req.(*DeleteAIToolRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Yak_SaveAITool_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveAIToolRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(YakServer).SaveAITool(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Yak_SaveAITool_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(YakServer).SaveAITool(ctx, req.(*SaveAIToolRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Yak_AIToolGenerateMetadata_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AIToolGenerateMetadataRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(YakServer).AIToolGenerateMetadata(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Yak_AIToolGenerateMetadata_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(YakServer).AIToolGenerateMetadata(ctx, req.(*AIToolGenerateMetadataRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
 
 // Yak_ServiceDesc is the grpc.ServiceDesc for Yak service.
 // It's only intended for direct use with grpc.RegisterService,
@@ -17130,6 +17890,30 @@ var Yak_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Yak_RecoverBuiltinFingerprint_Handler,
 		},
 		{
+			MethodName: "CreateFingerprintGroup",
+			Handler:    _Yak_CreateFingerprintGroup_Handler,
+		},
+		{
+			MethodName: "GetAllFingerprintGroup",
+			Handler:    _Yak_GetAllFingerprintGroup_Handler,
+		},
+		{
+			MethodName: "RenameFingerprintGroup",
+			Handler:    _Yak_RenameFingerprintGroup_Handler,
+		},
+		{
+			MethodName: "DeleteFingerprintGroup",
+			Handler:    _Yak_DeleteFingerprintGroup_Handler,
+		},
+		{
+			MethodName: "BatchUpdateFingerprintToGroup",
+			Handler:    _Yak_BatchUpdateFingerprintToGroup_Handler,
+		},
+		{
+			MethodName: "GetFingerprintGroupSetByFilter",
+			Handler:    _Yak_GetFingerprintGroupSetByFilter_Handler,
+		},
+		{
 			MethodName: "GetReverseShellProgramList",
 			Handler:    _Yak_GetReverseShellProgramList_Handler,
 		},
@@ -17336,6 +18120,46 @@ var Yak_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SearchNoteContent",
 			Handler:    _Yak_SearchNoteContent_Handler,
+		},
+		{
+			MethodName: "QueryAITask",
+			Handler:    _Yak_QueryAITask_Handler,
+		},
+		{
+			MethodName: "CreateAIForge",
+			Handler:    _Yak_CreateAIForge_Handler,
+		},
+		{
+			MethodName: "UpdateAIForge",
+			Handler:    _Yak_UpdateAIForge_Handler,
+		},
+		{
+			MethodName: "DeleteAIForge",
+			Handler:    _Yak_DeleteAIForge_Handler,
+		},
+		{
+			MethodName: "QueryAIForge",
+			Handler:    _Yak_QueryAIForge_Handler,
+		},
+		{
+			MethodName: "GetToolSetList",
+			Handler:    _Yak_GetToolSetList_Handler,
+		},
+		{
+			MethodName: "GetAIToolList",
+			Handler:    _Yak_GetAIToolList_Handler,
+		},
+		{
+			MethodName: "DeleteAITool",
+			Handler:    _Yak_DeleteAITool_Handler,
+		},
+		{
+			MethodName: "SaveAITool",
+			Handler:    _Yak_SaveAITool_Handler,
+		},
+		{
+			MethodName: "AIToolGenerateMetadata",
+			Handler:    _Yak_AIToolGenerateMetadata_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
@@ -17706,8 +18530,28 @@ var Yak_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 		{
+			StreamName:    "ExportFingerprint",
+			Handler:       _Yak_ExportFingerprint_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "ImportFingerprint",
+			Handler:       _Yak_ImportFingerprint_Handler,
+			ServerStreams: true,
+		},
+		{
 			StreamName:    "ApplySyntaxFlowRuleUpdate",
 			Handler:       _Yak_ApplySyntaxFlowRuleUpdate_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "SyntaxFlowRuleToOnline",
+			Handler:       _Yak_SyntaxFlowRuleToOnline_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "DownloadSyntaxFlowRule",
+			Handler:       _Yak_DownloadSyntaxFlowRule_Handler,
 			ServerStreams: true,
 		},
 		{
@@ -17751,6 +18595,17 @@ var Yak_ServiceDesc = grpc.ServiceDesc{
 			Handler:       _Yak_StartAITask_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
+		},
+		{
+			StreamName:    "StartAITriage",
+			Handler:       _Yak_StartAITriage_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "StartMcpServer",
+			Handler:       _Yak_StartMcpServer_Handler,
+			ServerStreams: true,
 		},
 	},
 	Metadata: "yakgrpc.proto",

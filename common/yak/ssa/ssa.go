@@ -317,6 +317,9 @@ type Function struct {
 	SideEffects       []*FunctionSideEffect
 	SideEffectsReturn []map[*Variable]*FunctionSideEffect
 
+	// throws clause
+	Throws []Value
+
 	// closure function double link. parentFunc <-> childFuncs
 	parent     Value   // parent function;  can be nil if there is no parent function
 	ChildFuncs []Value // child function within this function
@@ -393,6 +396,10 @@ type BasicBlock struct {
 	Index int
 	// BasicBlock graph
 	Preds, Succs []Value
+
+	// for CFG
+	Parent Value   // parent block
+	Child  []Value // child block
 
 	/*
 		if Condition == true: this block reach
@@ -686,17 +693,34 @@ var (
 
 // ----------- Const
 // ConstInst also have block pointer, which block set this const to variable
+type ConstType string
+
+const (
+	ConstTypeNormal ConstType = "normal"
+
+	// ConstTypePlaceholder stands for unValid const, like member call's key.
+	// We don't consider it a normal constant, but just a placeholder
+	ConstTypePlaceholder ConstType = "placeholder"
+)
+
 type ConstInst struct {
 	*Const
 	anValue
 	Unary      int
 	isIdentify bool // field key
 	Origin     User
+	ConstType  ConstType
 }
 
 // ConstInst cont set Type
 func (c *ConstInst) GetType() Type   { return c.anValue.GetType() }
 func (c *ConstInst) SetType(ts Type) { c.anValue.SetType(ts) }
+func (c *ConstInst) IsNormalConst() bool {
+	if c == nil {
+		return false
+	}
+	return c.ConstType == ConstTypeNormal
+}
 
 var (
 	_ Node        = (*ConstInst)(nil)
@@ -924,14 +948,27 @@ var (
 
 // ================================= Error Handler
 
+type ErrorCatch struct {
+	anValue
+	CatchBody Value
+	Exception Value
+}
+
+var _ Instruction = (*ErrorCatch)(nil)
+var _ User = (*ErrorCatch)(nil)
+var _ Value = (*ErrorCatch)(nil)
+
 // ------------- ErrorHandler
 type ErrorHandler struct {
 	anInstruction
-	catchs           []*BasicBlock
-	try, final, done *BasicBlock
+	Try, Final, Done Value
+	// catch and exception align
+	Catch []Value // error catch
 }
 
 var _ Instruction = (*ErrorHandler)(nil)
+var _ User = (*ErrorHandler)(nil)
+var _ Node = (*ErrorHandler)(nil)
 
 // -------------- PANIC
 type Panic struct {
@@ -970,6 +1007,8 @@ type Jump struct {
 }
 
 var _ Instruction = (*Jump)(nil)
+var _ User = (*Jump)(nil)
+var _ Node = (*Loop)(nil)
 
 // ----------- IF
 // The If instruction transfers control to one of the two successors

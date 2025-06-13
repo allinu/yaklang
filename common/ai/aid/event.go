@@ -1,15 +1,15 @@
 package aid
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/yaklang/yaklang/common/ai/aid/aitool"
-	"github.com/yaklang/yaklang/common/log"
-	"github.com/yaklang/yaklang/common/utils"
 	"io"
 	"strings"
 	"time"
+
+	"github.com/yaklang/yaklang/common/ai/aid/aitool"
+	"github.com/yaklang/yaklang/common/log"
+	"github.com/yaklang/yaklang/common/utils"
 )
 
 type EventType string
@@ -18,10 +18,19 @@ const (
 	EVENT_TYPE_STREAM     EventType = "stream"
 	EVENT_TYPE_STRUCTURED EventType = "structured"
 
+	// Token 开销情况
 	EVENT_TYPE_CONSUMPTION EventType = "consumption" // token consumption include `{"input_"}`
-	EVENT_TYPE_PONG        EventType = "pong"        // ping response ping-pong is a check for alive item
-	EVENT_TYPE_PRESSURE    EventType = "pressure"    // pressure for ai context percent
 
+	// 探活
+	EVENT_TYPE_PONG EventType = "pong" // ping response ping-pong is a check for alive item
+
+	// 压力值
+	EVENT_TYPE_PRESSURE EventType = "pressure" // pressure for ai context percent
+
+	EVENT_TYPE_AI_FIRST_BYTE_COST_MS EventType = "ai_first_byte_cost_ms" // first byte cost
+	EVENT_TYPE_AI_TOTAL_COST_MS      EventType = "ai_total_cost_ms"      // first byte cost
+
+	// AI 请求用户交互
 	EVENT_TYPE_REQUIRE_USER_INTERACTIVE = "require_user_interactive"
 
 	// risk control prompt is the prompt for risk control
@@ -38,6 +47,8 @@ const (
 	EVENT_TYPE_REVIEW_RELEASE EventType = "review_release"
 
 	EVENT_TYPE_INPUT EventType = "input"
+
+	EVENT_TYPE_AID_CONFIG = "aid_config" // aid config event, used to emit the current config information
 )
 
 type Event struct {
@@ -53,6 +64,11 @@ type Event struct {
 	Content     []byte
 
 	Timestamp int64
+
+	// task index
+	TaskIndex string
+	// disable markdown render
+	DisableMarkdown bool
 }
 
 func (e *Event) GetInteractiveId() string {
@@ -110,12 +126,14 @@ func (e *Event) String() string {
 }
 
 type eventWriteProducer struct {
-	isReason      bool
-	isSystem      bool
-	coordinatorId string
-	nodeId        string
-	handler       func(event *Event)
-	timeStamp     int64
+	isReason        bool
+	isSystem        bool
+	disableMarkdown bool
+	coordinatorId   string
+	nodeId          string
+	taskIndex       string
+	handler         func(event *Event)
+	timeStamp       int64
 }
 
 func (e *eventWriteProducer) Write(b []byte) (int, error) {
@@ -129,14 +147,16 @@ func (e *eventWriteProducer) Write(b []byte) (int, error) {
 	}
 
 	event := &Event{
-		CoordinatorId: e.coordinatorId,
-		NodeId:        e.nodeId,
-		Type:          EVENT_TYPE_STREAM,
-		IsSystem:      e.isSystem,
-		IsReason:      e.isReason,
-		IsStream:      true,
-		StreamDelta:   utils.CopyBytes(b),
-		Timestamp:     e.timeStamp, // the event in same stream should have the same timestamp
+		CoordinatorId:   e.coordinatorId,
+		NodeId:          e.nodeId,
+		Type:            EVENT_TYPE_STREAM,
+		IsSystem:        e.isSystem,
+		IsReason:        e.isReason,
+		IsStream:        true,
+		StreamDelta:     utils.CopyBytes(b),
+		Timestamp:       e.timeStamp, // the event in same stream should have the same timestamp
+		TaskIndex:       e.taskIndex,
+		DisableMarkdown: e.disableMarkdown,
 	}
 	e.handler(event)
 	return len(b), nil
@@ -155,10 +175,10 @@ func (r *Config) emitJson(typeName EventType, nodeId string, i any) {
 }
 
 func (r *Config) EmitStatus(key string, value any) {
-	r.EmitStructured("status", utils.Jsonify(map[string]any{
+	r.EmitStructured("status", map[string]any{
 		"key":   key,
 		"value": value,
-	}))
+	})
 }
 
 func (r *Config) EmitStructured(nodeId string, i any) {
@@ -194,7 +214,7 @@ func (r *Config) EmitRequireReviewForTask(task *aiTask, id string) {
 func (r *Config) EmitRequireReviewForPlan(rsp *PlanResponse, id string) {
 	reqs := map[string]any{
 		"id":        id,
-		"selectors": PlanReviewSuggestions,
+		"selectors": r.getPlanReviewSuggestion(),
 		"plans":     rsp,
 	}
 	if ep, ok := r.epm.loadEndpoint(id); ok {
@@ -282,50 +302,63 @@ func (r *Config) EmitErrorWithName(name string, fmtlog string, items ...any) {
 	r.emitLogWithLevel("error", name, fmtlog, items...)
 }
 
-func (r *Config) EmitToolCallStd(toolName string, stdOut, stdErr *bytes.Buffer) {
+func (r *Config) EmitToolCallStd(toolName string, stdOut, stdErr io.Reader, taskIndex string) {
 	startTime := time.Now()
-	r.EmitStreamEvent(fmt.Sprintf("tool-%v-stdout", toolName), startTime, stdOut)
-	r.EmitStreamEvent(fmt.Sprintf("tool-%v-stderr", toolName), startTime, stdErr)
+	r.EmitStreamEventEx(fmt.Sprintf("tool-%v-stdout", toolName), startTime, stdOut, taskIndex, true)
+	r.EmitStreamEventEx(fmt.Sprintf("tool-%v-stderr", toolName), startTime, stdErr, taskIndex, true)
 }
 
-func (r *Config) EmitStreamEvent(nodeId string, startTime time.Time, reader io.Reader) {
+func (r *Config) EmitStreamEvent(nodeId string, startTime time.Time, reader io.Reader, taskIndex string) {
+	r.EmitStreamEventEx(nodeId, startTime, reader, taskIndex, false)
+}
+
+func (r *Config) EmitStreamEventEx(nodeId string, startTime time.Time, reader io.Reader, taskIndex string, disableMarkdown bool) {
 	r.emitExStreamEvent(&streamEvent{
-		startTime: startTime,
-		isSystem:  false,
-		isReason:  false,
-		reader:    reader,
-		nodeId:    nodeId,
+		disableMarkdown: disableMarkdown,
+		startTime:       startTime,
+		isSystem:        false,
+		isReason:        false,
+		reader:          reader,
+		nodeId:          nodeId,
+		taskIndex:       taskIndex,
 	})
 }
 
-func (r *Config) EmitSystemStreamEvent(nodeId string, startTime time.Time, reader io.Reader) {
+func (r *Config) EmitSystemStreamEvent(nodeId string, startTime time.Time, reader io.Reader, taskIndex string) {
 	r.emitExStreamEvent(&streamEvent{
 		startTime: startTime,
 		isSystem:  true,
 		isReason:  false,
 		reader:    reader,
 		nodeId:    nodeId,
+		taskIndex: taskIndex,
 	})
 }
 
-func (r *Config) EmitReasonStreamEvent(nodeId string, startTime time.Time, reader io.Reader) {
+func (r *Config) EmitReasonStreamEvent(nodeId string, startTime time.Time, reader io.Reader, taskIndex string) {
 	r.emitExStreamEvent(&streamEvent{
 		startTime: startTime,
 		isSystem:  false,
 		isReason:  true,
 		reader:    reader,
 		nodeId:    nodeId,
+		taskIndex: taskIndex,
 	})
 }
 
-func (r *Config) EmitSystemReasonStreamEvent(nodeId string, startTime time.Time, reader io.Reader) {
+func (r *Config) EmitSystemReasonStreamEvent(nodeId string, startTime time.Time, reader io.Reader, taskIndex string) {
 	r.emitExStreamEvent(&streamEvent{
 		startTime: startTime,
 		isSystem:  true,
 		isReason:  true,
 		reader:    reader,
 		nodeId:    nodeId,
+		taskIndex: taskIndex,
 	})
+}
+
+func (r *Config) EmitCurrentConfigInfo() {
+	r.emitJson(EVENT_TYPE_AID_CONFIG, "system", r.SimpleInfoMap())
 }
 
 func (r *Config) EmitInfo(fmtlog string, items ...any) {
@@ -336,8 +369,9 @@ func (r *Config) EmitPushTask(task *aiTask) {
 	r.EmitStructured("system", map[string]any{
 		"type": "push_task",
 		"task": map[string]any{
-			"name": task.Name,
-			"goal": task.Goal,
+			"index": task.Index,
+			"name":  task.Name,
+			"goal":  task.Goal,
 		},
 	})
 }
@@ -346,8 +380,9 @@ func (r *Config) EmitPopTask(task *aiTask) {
 	r.EmitStructured("system", map[string]any{
 		"type": "pop_task",
 		"task": map[string]any{
-			"name": task.Name,
-			"goal": task.Goal,
+			"index": task.Index,
+			"name":  task.Name,
+			"goal":  task.Goal,
 		},
 	})
 }
@@ -364,6 +399,7 @@ func (r *Config) EmitUpdateTaskStatus(task *aiTask) {
 	r.EmitStructured("system", map[string]any{
 		"type": "update_task_status",
 		"task": map[string]any{
+			"index":        task.Index,
 			"name":         task.Name,
 			"goal":         task.Goal,
 			"summary":      task.ShortSummary,
@@ -399,11 +435,13 @@ func (r *Config) EmitSystemPrompt(step string, prompt string) {
 }
 
 type streamEvent struct {
-	startTime time.Time
-	isSystem  bool
-	isReason  bool
-	reader    io.Reader
-	nodeId    string
+	startTime       time.Time
+	isSystem        bool
+	isReason        bool
+	reader          io.Reader
+	nodeId          string
+	taskIndex       string
+	disableMarkdown bool
 }
 
 func (r *Config) emitExStreamEvent(e *streamEvent) {
@@ -412,12 +450,14 @@ func (r *Config) emitExStreamEvent(e *streamEvent) {
 		defer r.streamWaitGroup.Done()
 
 		io.Copy(&eventWriteProducer{
-			coordinatorId: r.id,
-			nodeId:        e.nodeId,
-			isSystem:      e.isSystem,
-			isReason:      e.isReason,
-			handler:       r.emit,
-			timeStamp:     e.startTime.Unix(),
+			coordinatorId:   r.id,
+			nodeId:          e.nodeId,
+			disableMarkdown: e.disableMarkdown,
+			isSystem:        e.isSystem,
+			isReason:        e.isReason,
+			handler:         r.emit,
+			timeStamp:       e.startTime.Unix(),
+			taskIndex:       e.taskIndex,
 		}, e.reader)
 	}()
 	return

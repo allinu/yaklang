@@ -18,6 +18,9 @@ type SSABuilder struct {
 type builder struct {
 	*ssa.FunctionBuilder
 	sourceFile *ast.SourceFile
+
+	useStrict         bool
+	contextLabelStack []string
 }
 
 var Builder ssa.Builder = &SSABuilder{}
@@ -29,8 +32,10 @@ func (*SSABuilder) Build(src string, force bool, b *ssa.FunctionBuilder) error {
 	}
 	b.SupportClosure = true
 	build := &builder{
-		FunctionBuilder: b,
-		sourceFile:      jsAST,
+		FunctionBuilder:   b,
+		sourceFile:        jsAST,
+		useStrict:         false,
+		contextLabelStack: make([]string, 0),
 	}
 	build.VisitSourceFile(jsAST)
 	return nil

@@ -1,7 +1,6 @@
 package aid
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -52,7 +51,7 @@ func (t *aiTask) getToolResultAction(response string) string {
 		gjsonResult := gjson.Parse(toolRequiredJSON)
 		action := gjsonResult.Get("@action").String()
 		switch action {
-		case "require-more-tool", "finished":
+		case "continue-current-task", "finished":
 			return action
 		}
 	}
@@ -69,9 +68,12 @@ func (t *aiTask) callTool(targetTool *aitool.Tool) (result *aitool.ToolResult, e
 		return nil, NewNonRetryableTaskStackError(err)
 	}
 
-	var callToolParams aitool.InvokeParams = make(aitool.InvokeParams)
+	var callToolParams = t.config.MakeInvokeParams()
 	// transaction for generate params
-	err = t.config.callAiTransaction(paramsPrompt, t.callAI, func(rsp *AIResponse) error {
+	err = t.config.callAiTransaction(paramsPrompt, func(request *AIRequest) (*AIResponse, error) {
+		request.SetTaskIndex(t.Index)
+		return t.callAI(request)
+	}, func(rsp *AIResponse) error {
 		callParamsString, _ := io.ReadAll(rsp.GetOutputStreamReader("call-tools", true, t.config))
 
 		// extract action
@@ -91,11 +93,6 @@ func (t *aiTask) callTool(targetTool *aitool.Tool) (result *aitool.ToolResult, e
 	}
 
 	t.config.EmitInfo("start to invoke tool:%v 's callback function", targetTool.Name)
-	// 调用工具
-	stdoutBuf := bytes.NewBuffer(nil)
-	stderrBuf := bytes.NewBuffer(nil)
-	t.config.EmitToolCallStd(targetTool.Name, stdoutBuf, stderrBuf)
-
 	// DANGER: 这个值永远不应该暴露给用户，只有内部工具才有资格设置它
 	if targetTool.NoNeedUserReview {
 		t.config.EmitInfo("tool[%v] (internal helper tool) no need user review, skip review", targetTool.Name)
@@ -111,14 +108,29 @@ func (t *aiTask) callTool(targetTool *aitool.Tool) (result *aitool.ToolResult, e
 			t.config.EmitError("user review params is nil, plan failed")
 			return nil, NewNonRetryableTaskStackError(utils.Errorf("user review params is nil"))
 		}
-		targetTool, callToolParams, err = t.handleToolUseReview(targetTool, callToolParams, params)
+		var overrideResult *aitool.ToolResult
+		var next HandleToolUseNext
+		targetTool, callToolParams, overrideResult, next, err = t.handleToolUseReview(targetTool, callToolParams, params)
 		if err != nil {
 			t.config.EmitError("error handling tool use review: %v", err)
 			return nil, NewNonRetryableTaskStackError(err)
 		}
+		switch next {
+		case HandleToolUseNext_Override:
+			return overrideResult, nil
+		default:
+		}
 	}
+
+	// 调用工具
+	stdoutReader, stdoutWriter := utils.NewPipe()
+	defer stdoutWriter.Close()
+	stderrReader, stderrWriter := utils.NewPipe()
+	defer stderrWriter.Close()
+
+	t.config.EmitToolCallStd(targetTool.Name, stdoutReader, stderrReader, t.Index)
 	t.config.EmitInfo("start to execute tool:%v", targetTool.Name)
-	toolResult, err := targetTool.InvokeWithParams(callToolParams, t.config.toolCallOpts(stdoutBuf, stderrBuf)...)
+	toolResult, err := targetTool.InvokeWithParams(callToolParams, t.config.toolCallOpts(stdoutWriter, stderrWriter)...)
 	if err != nil {
 		toolResult.Error = fmt.Sprintf("error invoking tool[%v]: %v", targetTool.Name, err)
 		toolResult.Success = false
@@ -137,8 +149,11 @@ func (t *aiTask) toolResultDecision(result *aitool.ToolResult, targetTool *aitoo
 		return "", NewNonRetryableTaskStackError(err)
 	}
 
-	var actionFinal string
-	err = t.config.callAiTransaction(decisionPrompt, t.callAI, func(continueResult *AIResponse) error {
+	var action *Action
+	err = t.config.callAiTransaction(decisionPrompt, func(request *AIRequest) (*AIResponse, error) {
+		request.SetTaskIndex(t.Index)
+		return t.callAI(request)
+	}, func(continueResult *AIResponse) error {
 		nextResponse, err := io.ReadAll(continueResult.GetOutputStreamReader("decision", true, t.config))
 		if err != nil {
 			err = utils.Errorf("error reading AI response: %v", err)
@@ -146,13 +161,9 @@ func (t *aiTask) toolResultDecision(result *aitool.ToolResult, targetTool *aitoo
 		}
 
 		// 获取下一步决策
-		action, err := ExtractAction(string(nextResponse), "require-more-tool", "finished")
+		action, err = ExtractAction(string(nextResponse), taskContinue, taskProceedNext, taskSkipped, taskFailed)
 		if err != nil {
 			return utils.Errorf("error extracting action: %v", err)
-		}
-		actionFinal = action.Name()
-		if actionFinal != "require-more-tool" && actionFinal != "finished" {
-			return utils.Errorf("error extracting action: %v", actionFinal)
 		}
 		if ret := action.GetString("status_summary"); ret != "" {
 			t.StatusSummary = ret
@@ -177,12 +188,12 @@ func (t *aiTask) toolResultDecision(result *aitool.ToolResult, targetTool *aitoo
 			t.TaskSummary = t.LongSummary
 		}
 
-		t.config.EmitInfo("tool[%v] and next do the action: %v", targetTool.Name, actionFinal)
+		t.config.EmitInfo("tool[%v] and next do the action: %v", targetTool.Name, action.Name())
 		return nil
 	})
 	if err != nil {
 		t.config.EmitWarning("no action found, using default action, finished")
 		return "", NewNonRetryableTaskStackError(err)
 	}
-	return actionFinal, nil
+	return action.Name(), nil
 }

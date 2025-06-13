@@ -1,15 +1,16 @@
 package aid
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-
 	"github.com/samber/lo"
 	"github.com/yaklang/yaklang/common/ai/aid/aitool"
-
 	"github.com/yaklang/yaklang/common/jsonextractor"
 	"github.com/yaklang/yaklang/common/log"
 	"github.com/yaklang/yaklang/common/utils"
+	"io"
+	"strings"
 )
 
 type Action struct {
@@ -18,6 +19,9 @@ type Action struct {
 }
 
 func (q *Action) Name() string {
+	if q == nil {
+		return ""
+	}
 	return q.name
 }
 
@@ -36,6 +40,18 @@ func (q *Action) GetString(key string, defaults ...string) string {
 	return q.params.GetString(key, defaults...)
 }
 
+func (q *Action) GetAnyToString(key string, defaults ...string) string {
+	return q.params.GetAnyToString(key, defaults...)
+}
+
+func (q *Action) GetStringSlice(key string, defaults ...[]string) []string {
+	return q.params.GetStringSlice(key, defaults...)
+}
+
+func (q *Action) ActionType() string {
+	return q.params.GetString("@action")
+}
+
 func (q *Action) GetBool(key string, defaults ...bool) bool {
 	return q.params.GetBool(key, defaults...)
 }
@@ -48,44 +64,84 @@ func (q *Action) GetInvokeParamsArray(key string) []aitool.InvokeParams {
 	return q.params.GetObjectArray(key)
 }
 
-func ExtractAction(i string, actionName string, alias ...string) (*Action, error) {
+func ExtractActionFromStream(reader io.Reader, actionName string, alias ...string) (*Action, error) {
 	ac := &Action{
 		name:   actionName,
 		params: make(map[string]any),
 	}
-	for _, pairs := range jsonextractor.ExtractObjectIndexes(i) {
-		start, end := pairs[0], pairs[1]
-		jsonRaw := i[start:end]
-		var i = make(map[string]any)
-		err := json.Unmarshal([]byte(jsonRaw), &i)
-		if err != nil {
-			log.Warnf("try to unmarshal action[%#v] failed: %v", jsonRaw, err)
-			continue
-		}
-		if rawData, ok := i["@action"]; ok && fmt.Sprint(rawData) != "" {
-			keys := []string{actionName}
-			keys = append(keys, alias...)
-			matched := false
-			action := fmt.Sprint(rawData)
-			for _, key := range keys {
-				if action == key {
-					matched = true
-					break
+
+	actions := []string{actionName}
+	actions = append(actions, alias...)
+	sigchan := make(chan struct{})
+	allFinished := make(chan struct{})
+	var err error
+	var buf bytes.Buffer
+	go func() {
+		defer func() {
+			utils.TryCloseChannel(allFinished)
+		}()
+		defer func() {
+			utils.TryCloseChannel(sigchan)
+		}()
+
+		stopped := utils.NewBool(false)
+		err = jsonextractor.ExtractStructuredJSONFromStream(io.TeeReader(reader, &buf), jsonextractor.WithObjectCallback(func(data map[string]any) {
+			if stopped.IsSet() {
+				return
+			}
+			dataParams := aitool.InvokeParams(data)
+			if !dataParams.Has("@action") {
+				return
+			}
+			targetString := dataParams.GetString("@action")
+			if targetString != "" {
+				if utils.StringArrayContains(actions, targetString) {
+					ac.name = targetString
+					ac.params = data
+					if ac.params == nil {
+						ac.params = make(map[string]any)
+					}
+					close(sigchan)
+					stopped.Set()
+					return
+				}
+			} else {
+				target := dataParams.GetObject("@action")
+				for _, v := range target {
+					targetString = utils.InterfaceToString(v)
+					if utils.StringArrayContains(actions, targetString) {
+						ac.name = targetString
+						ac.params = data
+						if ac.params == nil {
+							ac.params = make(map[string]any)
+						}
+						ac.params["@action"] = targetString
+						close(sigchan)
+						stopped.Set()
+						return
+					}
 				}
 			}
-			if !matched {
-				log.Errorf("action[%#v] not matched in %v", action, keys)
-				continue
-			}
-			ac.name = action
-			ac.params = i
-			if ac.params == nil {
-				ac.params = make(map[string]any)
-			}
-			return ac, nil
+		}))
+		if err != nil {
+			log.Error("Failed to extract action", "action", buf.String(), "error", err)
 		}
+	}()
+	<-sigchan
+
+	if len(ac.params) > 0 {
+		return ac, nil
 	}
-	return nil, utils.Errorf("cannot extract action from: %v", utils.ShrinkString(i, 100))
+
+	<-allFinished
+	if err != nil {
+		return nil, err
+	}
+	return nil, utils.Errorf("cannot extract action[%v] from: %v", actions, utils.ShrinkString(buf.String(), 100))
+}
+
+func ExtractAction(i string, actionName string, alias ...string) (*Action, error) {
+	return ExtractActionFromStream(strings.NewReader(i), actionName, alias...)
 }
 
 func ExtractAllAction(i string) []*Action {

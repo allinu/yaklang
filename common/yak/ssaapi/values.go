@@ -2,9 +2,6 @@ package ssaapi
 
 import (
 	"fmt"
-
-	"github.com/yaklang/yaklang/common/log"
-
 	"github.com/samber/lo"
 	"github.com/yaklang/yaklang/common/syntaxflow/sfvm"
 	"github.com/yaklang/yaklang/common/utils"
@@ -243,6 +240,17 @@ func (v *Value) GetVerboseName() string {
 	return fmt.Sprintf(`t%d: %v`, v.GetId(), v.ShortString())
 }
 
+func (v *Value) GetInnerValueVerboseName() string {
+	if v.IsNil() {
+		return ""
+	}
+	inner := v.innerValue
+	if utils.IsNil(inner) {
+		return ""
+	}
+	return inner.GetVerboseName()
+}
+
 func (i *Value) Show() *Value               { fmt.Println(i); return i }
 func (i *Value) ShowWithRange() *Value      { fmt.Println(i.StringWithRange()); return i }
 func (i *Value) ShowWithSourceCode() *Value { fmt.Println(i.StringWithSourceCode()); return i }
@@ -368,6 +376,18 @@ func (v *Value) GetPointer() Values {
 	return lo.FilterMap(pointerIF.GetPointer(), func(item ssa.Value, index int) (*Value, bool) {
 		return v.NewValue(item), true
 	})
+}
+
+func (v *Value) GetReference() *Value {
+	if v.IsNil() {
+		return nil
+	}
+
+	pointerIF, ok := v.getInstruction().(ssa.PointerIF)
+	if !ok {
+		return nil
+	}
+	return v.NewValue(pointerIF.GetReference())
 }
 
 func (v *Value) GetMask() Values {
@@ -897,14 +917,14 @@ func (v *Value) GetPredecessors() []*PredecessorValue {
 		if auditNode := v.auditNode; auditNode != nil {
 			edges := ssadb.GetPredecessorEdgeByFromID(auditNode.ID)
 			var preds []*PredecessorValue
-			for _, edges := range edges {
-				p := v.NewValueFromAuditNode(uint(edges.ToNode))
+			for _, edge := range edges {
+				p := v.NewValueFromAuditNode(uint(edge.ToNode))
 				if p != nil {
 					preds = append(preds, &PredecessorValue{
 						Node: p,
 						Info: &sfvm.AnalysisContext{
-							Step:  int(edges.AnalysisStep),
-							Label: edges.AnalysisLabel,
+							Step:  int(edge.AnalysisStep),
+							Label: edge.AnalysisLabel,
 						},
 					})
 				}

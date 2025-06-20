@@ -1,11 +1,12 @@
 package aid
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"sync"
 
+	"github.com/segmentio/ksuid"
 	"github.com/tidwall/gjson"
 	"github.com/yaklang/yaklang/common/ai/aid/aitool"
 	"github.com/yaklang/yaklang/common/jsonextractor"
@@ -52,26 +53,64 @@ func (t *aiTask) getToolResultAction(response string) string {
 		gjsonResult := gjson.Parse(toolRequiredJSON)
 		action := gjsonResult.Get("@action").String()
 		switch action {
-		case "require-more-tool", "finished":
+		case "continue-current-task", "finished":
 			return action
 		}
 	}
 	return "unknown"
 }
 
-func (t *aiTask) callTool(targetTool *aitool.Tool) (result *aitool.ToolResult, err error) {
+func (t *aiTask) callTool(targetTool *aitool.Tool) (result *aitool.ToolResult, directlyAnswer bool, err error) {
 	t.config.EmitInfo("start to generate tool[%v] params in task:%#v", targetTool.Name, t.Name)
+
+	callToolId := ksuid.New().String()
+	t.config.EmitToolCallStart(callToolId, targetTool)
+	// tool-call with stats: generating-params -> review-params -> invoking -> done/finished
+	callToolDoneOnce := new(sync.Once)
+
+	handleResultDoneCallback := func() {
+		callToolDoneOnce.Do(func() {
+			t.config.EmitToolCallStatus(callToolId, "done")
+			t.config.EmitToolCallDone(callToolId)
+		})
+	}
+	handleResultUserCancel := func(reason any) {
+		callToolDoneOnce.Do(func() {
+			t.config.EmitToolCallStatus(callToolId, fmt.Sprintf("cancelled by reason: %v", reason))
+			t.config.EmitToolCallUserCancel(callToolId)
+		})
+	}
+	handleResultErr := func(err any) {
+		callToolDoneOnce.Do(func() {
+			t.config.EmitToolCallError(callToolId, err)
+		})
+	}
+
+	var (
+		_ = handleResultDoneCallback
+		_ = handleResultUserCancel
+		_ = handleResultErr
+	)
+
+	defer func() {
+		handleResultDoneCallback()
+	}()
+
 	// 生成申请工具详细描述的prompt
 	paramsPrompt, err := t.generateRequireToolResponsePrompt(targetTool, targetTool.Name)
 	if err != nil {
 		err = utils.Errorf("error generate require tool response prompt: %v", err)
 		t.config.EmitError("error generate require tool response prompt: %v", err)
-		return nil, NewNonRetryableTaskStackError(err)
+		handleResultErr(fmt.Sprintf("error generate require tool response prompt: %v", err))
+		return nil, false, NewNonRetryableTaskStackError(err)
 	}
 
-	var callToolParams aitool.InvokeParams = make(aitool.InvokeParams)
+	var callToolParams = t.config.MakeInvokeParams()
 	// transaction for generate params
-	err = t.config.callAiTransaction(paramsPrompt, t.callAI, func(rsp *AIResponse) error {
+	err = t.config.callAiTransaction(paramsPrompt, func(request *AIRequest) (*AIResponse, error) {
+		request.SetTaskIndex(t.Index)
+		return t.callAI(request)
+	}, func(rsp *AIResponse) error {
 		callParamsString, _ := io.ReadAll(rsp.GetOutputStreamReader("call-tools", true, t.config))
 
 		// extract action
@@ -87,15 +126,11 @@ func (t *aiTask) callTool(targetTool *aitool.Tool) (result *aitool.ToolResult, e
 	if err != nil {
 		err = utils.Errorf("calling AI transaction failed: %v", err)
 		t.config.EmitError("critical err: %v", err)
-		return nil, NewNonRetryableTaskStackError(err)
+		handleResultErr(err)
+		return nil, false, NewNonRetryableTaskStackError(err)
 	}
 
 	t.config.EmitInfo("start to invoke tool:%v 's callback function", targetTool.Name)
-	// 调用工具
-	stdoutBuf := bytes.NewBuffer(nil)
-	stderrBuf := bytes.NewBuffer(nil)
-	t.config.EmitToolCallStd(targetTool.Name, stdoutBuf, stderrBuf)
-
 	// DANGER: 这个值永远不应该暴露给用户，只有内部工具才有资格设置它
 	if targetTool.NoNeedUserReview {
 		t.config.EmitInfo("tool[%v] (internal helper tool) no need user review, skip review", targetTool.Name)
@@ -108,17 +143,38 @@ func (t *aiTask) callTool(targetTool *aitool.Tool) (result *aitool.ToolResult, e
 		params := ep.GetParams()
 		t.config.ReleaseInteractiveEvent(ep.id, params)
 		if params == nil {
-			t.config.EmitError("user review params is nil, plan failed")
-			return nil, NewNonRetryableTaskStackError(utils.Errorf("user review params is nil"))
+			t.config.EmitError("user review params is nil, tool use failed")
+			handleResultErr("user review params is nil, tool use failed")
+			return nil, false, NewNonRetryableTaskStackError(utils.Errorf("user review params is nil"))
 		}
-		targetTool, callToolParams, err = t.handleToolUseReview(targetTool, callToolParams, params)
+		var overrideResult *aitool.ToolResult
+		var next HandleToolUseNext
+		targetTool, callToolParams, overrideResult, next, err = t.handleToolUseReview(
+			targetTool, callToolParams, params, handleResultUserCancel,
+		)
 		if err != nil {
 			t.config.EmitError("error handling tool use review: %v", err)
-			return nil, NewNonRetryableTaskStackError(err)
+			handleResultErr(fmt.Sprintf("error handling tool use review: %v", err))
+			return nil, false, NewNonRetryableTaskStackError(err)
+		}
+		switch next {
+		case HandleToolUseNext_Override:
+			return overrideResult, false, nil
+		case HandleToolUseNext_DirectlyAnswer:
+			return nil, true, nil
+		default:
 		}
 	}
+
+	// 调用工具
+	stdoutReader, stdoutWriter := utils.NewPipe()
+	defer stdoutWriter.Close()
+	stderrReader, stderrWriter := utils.NewPipe()
+	defer stderrWriter.Close()
+
+	t.config.EmitToolCallStd(targetTool.Name, stdoutReader, stderrReader, t.Index)
 	t.config.EmitInfo("start to execute tool:%v", targetTool.Name)
-	toolResult, err := targetTool.InvokeWithParams(callToolParams, t.config.toolCallOpts(stdoutBuf, stderrBuf)...)
+	toolResult, err := targetTool.InvokeWithParams(callToolParams, t.config.toolCallOpts(callToolId, handleResultUserCancel, handleResultErr, stdoutWriter, stderrWriter)...)
 	if err != nil {
 		toolResult.Error = fmt.Sprintf("error invoking tool[%v]: %v", targetTool.Name, err)
 		toolResult.Success = false
@@ -127,7 +183,7 @@ func (t *aiTask) callTool(targetTool *aitool.Tool) (result *aitool.ToolResult, e
 	t.config.EmitInfo("start to generate and feedback tool[%v] result in task:%#v", targetTool.Name, t.Name)
 	// 生成调用工具结果的prompt
 
-	return toolResult, nil
+	return toolResult, false, nil
 }
 
 func (t *aiTask) toolResultDecision(result *aitool.ToolResult, targetTool *aitool.Tool) (string, error) {
@@ -137,8 +193,11 @@ func (t *aiTask) toolResultDecision(result *aitool.ToolResult, targetTool *aitoo
 		return "", NewNonRetryableTaskStackError(err)
 	}
 
-	var actionFinal string
-	err = t.config.callAiTransaction(decisionPrompt, t.callAI, func(continueResult *AIResponse) error {
+	var action *Action
+	err = t.config.callAiTransaction(decisionPrompt, func(request *AIRequest) (*AIResponse, error) {
+		request.SetTaskIndex(t.Index)
+		return t.callAI(request)
+	}, func(continueResult *AIResponse) error {
 		nextResponse, err := io.ReadAll(continueResult.GetOutputStreamReader("decision", true, t.config))
 		if err != nil {
 			err = utils.Errorf("error reading AI response: %v", err)
@@ -146,13 +205,9 @@ func (t *aiTask) toolResultDecision(result *aitool.ToolResult, targetTool *aitoo
 		}
 
 		// 获取下一步决策
-		action, err := ExtractAction(string(nextResponse), "require-more-tool", "finished")
+		action, err = ExtractAction(string(nextResponse), taskContinue, taskProceedNext, taskSkipped, taskFailed)
 		if err != nil {
 			return utils.Errorf("error extracting action: %v", err)
-		}
-		actionFinal = action.Name()
-		if actionFinal != "require-more-tool" && actionFinal != "finished" {
-			return utils.Errorf("error extracting action: %v", actionFinal)
 		}
 		if ret := action.GetString("status_summary"); ret != "" {
 			t.StatusSummary = ret
@@ -177,12 +232,12 @@ func (t *aiTask) toolResultDecision(result *aitool.ToolResult, targetTool *aitoo
 			t.TaskSummary = t.LongSummary
 		}
 
-		t.config.EmitInfo("tool[%v] and next do the action: %v", targetTool.Name, actionFinal)
+		t.config.EmitInfo("tool[%v] and next do the action: %v", targetTool.Name, action.Name())
 		return nil
 	})
 	if err != nil {
 		t.config.EmitWarning("no action found, using default action, finished")
 		return "", NewNonRetryableTaskStackError(err)
 	}
-	return actionFinal, nil
+	return action.Name(), nil
 }

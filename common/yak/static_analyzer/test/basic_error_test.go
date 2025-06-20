@@ -245,3 +245,39 @@ for i in infos {
 		`, []string{})
 	})
 }
+func TestHandlerError(t *testing.T) {
+	t.Run("test handler1", func(t *testing.T) {
+		code := `func c(){
+	a = randn(1, 2)
+	_,err = poc.ParseBytesToHTTPRequest("")
+	if(a!=2){
+		println(err);
+		return true;
+	}
+		println(err);
+	if(a!=3){
+		return true;
+	}
+	println(a);
+}
+`
+		check(t, code, []string{})
+	})
+	t.Run("test handler2", func(t *testing.T) {
+		code := `bb = str.Join([]string{"1","2"}, " ")
+req,err = poc.ParseBytesToHTTPRequest("")
+if err!=nil{
+    return true
+}
+if bb{
+    _,_,err = poc.HTTP("")
+}else{
+    _,_,err = poc.HTTP("")
+}
+
+if bb{
+    return true
+}`
+		check(t, code, []string{"Error Unhandled ", "Error Unhandled "})
+	})
+}

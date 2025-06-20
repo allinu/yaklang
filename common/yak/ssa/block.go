@@ -2,8 +2,6 @@ package ssa
 
 import (
 	"fmt"
-
-	"github.com/yaklang/yaklang/common/log"
 )
 
 func (f *Function) GetDeferBlock() *BasicBlock {
@@ -59,7 +57,7 @@ func (f *Function) newBasicBlockEx(name string, isSealed bool, nodAddToBlocks bo
 	if functionRange := f.GetRange(); functionRange != nil {
 		b.SetRange(functionRange)
 	} else if name == "entry" {
-		log.Infof("func$%v entry 's range is nil, set entry block range to empty in first building", f.name)
+		log.Debugf("func$%v entry 's range is nil, set entry block range to empty in first building", f.name)
 	} else {
 		log.Errorf("function$%v 's range is nil, missed block range (%v)", f.name, name)
 	}
@@ -87,6 +85,38 @@ func (b *BasicBlock) SetScope(s ScopeIF) {
 		log.Errorf("block %v already has a scope", b.GetName())
 	}
 	b.ScopeTable = s
+	{
+		if block := GetBlockByScope(s); block != nil {
+			log.Errorf("block %v set scope %v, but this scope already has block %v", b.GetName(), s.GetScopeName(), block.GetName())
+		}
+		s.SetExternInfo("block", b)
+	}
+	{
+		if block := GetBlockByScope(s.GetParent()); block != nil {
+			b.Parent = block
+			block.Child = append(block.Child, b)
+		}
+	}
+}
+
+func (b *BasicBlock) HaveSubBlock(sub Value) bool {
+	if b == nil || sub == nil {
+		return false
+	}
+
+	for {
+		subBlock, ok := ToBasicBlock(sub)
+		if !ok {
+			log.Errorf("BasicBlock.HaveSubBlock: sub %v is not a basic block", sub)
+			return false
+		}
+
+		if b.GetId() == subBlock.GetId() {
+			return true
+		}
+
+		sub = subBlock.Parent
+	}
 }
 
 /*

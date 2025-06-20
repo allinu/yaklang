@@ -1,7 +1,6 @@
 package ssa
 
 import (
-	"github.com/yaklang/yaklang/common/log"
 	"github.com/yaklang/yaklang/common/utils"
 )
 
@@ -82,7 +81,7 @@ type Blueprint struct {
 	// _container is an inner ssa.Valueorigin cls container
 	_container Value
 
-	GeneralUndefined func(string) *Undefined
+	Tokenizer CanStartStopToken // 标记blueprint声明的位置
 
 	ParentBlueprints    []*Blueprint
 	InterfaceBlueprints []*Blueprint
@@ -345,7 +344,7 @@ func (c *Blueprint) storeField(name string, val Value, _type BlueprintFieldKind)
 
 	container := c._container
 	builder := container.GetFunc().builder
-	createVariable(builder, builder.CreateMemberCallVariable(c._container, builder.EmitConstInst(name)))
+	createVariable(builder, builder.CreateMemberCallVariable(c._container, builder.EmitConstInstPlaceholder(name)))
 }
 
 func (b *Blueprint) InitializeWithContainer(con *Make) error {

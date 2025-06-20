@@ -3,6 +3,10 @@ package fp
 import (
 	"context"
 	"fmt"
+	"github.com/yaklang/yaklang/common/consts"
+	"github.com/yaklang/yaklang/common/log"
+	"github.com/yaklang/yaklang/common/yakgrpc/yakit"
+	"github.com/yaklang/yaklang/common/yakgrpc/ypb"
 	"io/ioutil"
 	"sync"
 	"time"
@@ -176,9 +180,11 @@ func WithCache(b bool) ConfigOption {
 // ```
 // result, err := servicescan.Scan("127.0.0.1", "22,80,443", servicescan.onOpen(result => dump(result.String())))
 // die(err)
-// for i in result {
-//		println(i.String())
-//	}
+//
+//	for i in result {
+//			println(i.String())
+//		}
+//
 // ```
 func WithOnPortOpenCallback(cb func(*MatchResult)) ConfigOption {
 	return func(config *Config) {
@@ -191,8 +197,9 @@ func WithOnPortOpenCallback(cb func(*MatchResult)) ConfigOption {
 // @return {ConfigOption} 返回配置项
 // Example:
 // ```
-// 	result, err := servicescan.Scan("127.0.0.1", "22,80,443", servicescan.onFinish(result => dump(result.String())))
-// 	die(err)
+//
+//	result, err := servicescan.Scan("127.0.0.1", "22,80,443", servicescan.onFinish(result => dump(result.String())))
+//	die(err)
 //	for i in result {
 //		println(i.String())
 //	}
@@ -600,7 +607,65 @@ func WithWebFingerprintRule(rs ...any) ConfigOption {
 		if allRules == nil {
 			return
 		}
-		config.WebFingerprintRules = allRules
+		config.WebFingerprintRules = append(config.WebFingerprintRules, allRules...)
+	}
+}
+
+// service servicescan 的配置选项，用于指定指纹库中的指纹组。
+// @return {ConfigOption} 返回配置选项
+// Example:
+// ```
+// result,err = servicescan.Scan("127.0.0.1", "22-80,443,3389,161", servicescan.withRuleGroup("group1","group2")) // 使用"group1"和"group2"指纹组的指纹进行扫描
+// die(err) // 如果错误非空则报错
+// for res := range result { // 通过遍历管道的形式获取管道中的结果，一旦有结果返回就会执行循环体的代码
+//
+//	   println(res.String()) // 输出结果，调用String方法获取可读字符串
+//	}
+//
+// ```
+func WithFingerprintRuleGroup(groups ...string) ConfigOption {
+	rules, err := yakit.QueryGeneralRuleByGroup(consts.GetGormProfileDatabase(), groups...)
+	if err != nil {
+		log.Errorf("query fingerprint rule by group %v failed: %s", groups, err)
+	}
+	allRules, err := parsers.ParseExpRule(rules...)
+	if err != nil {
+		log.Errorf("parse fingerprint rule by group %v failed: %s", groups, err)
+	}
+	return func(config *Config) {
+		if allRules == nil {
+			return
+		}
+		config.WebFingerprintRules = append(config.WebFingerprintRules, allRules...)
+	}
+}
+
+// service servicescan 的配置选项，用于指定使用指纹组的全部指纹。
+// @return {ConfigOption} 返回配置选项
+// Example:
+// ```
+// result,err = servicescan.Scan("127.0.0.1", "22-80,443,3389,161", servicescan.withRuleGroupAll()) // 使用全部指纹组的指纹进行扫描
+// die(err) // 如果错误非空则报错
+// for res := range result { // 通过遍历管道的形式获取管道中的结果，一旦有结果返回就会执行循环体的代码
+//
+//	   println(res.String()) // 输出结果，调用String方法获取可读字符串
+//	}
+//
+// ```
+func WithFingerprintRuleGroupAll() ConfigOption {
+	rules, err := yakit.QueryGeneralRuleFast(consts.GetGormProfileDatabase(), &ypb.FingerprintFilter{})
+	if err != nil {
+		log.Errorf("query fingerprint rule fast failed: %s", err)
+	}
+	allRules, err := parsers.ParseExpRule(rules...)
+	if err != nil {
+		log.Errorf("parse fingerprint rule fast failed: %s", err)
+	}
+	return func(config *Config) {
+		if allRules == nil {
+			return
+		}
+		config.WebFingerprintRules = append(config.WebFingerprintRules, allRules...)
 	}
 }
 

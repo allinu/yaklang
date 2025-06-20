@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -15,7 +14,6 @@ import (
 
 	"github.com/yaklang/yaklang/common/consts"
 
-	"github.com/yaklang/yaklang/common/log"
 	"github.com/yaklang/yaklang/common/utils/memedit"
 
 	"github.com/yaklang/yaklang/common/utils"
@@ -42,7 +40,6 @@ type config struct {
 	ignoreSyntaxErr bool
 	reCompile       bool
 	strictMode      bool
-	databasePath    string
 
 	// input, code or project path
 	originEditor *memedit.MemEditor
@@ -77,6 +74,8 @@ type config struct {
 	ctx context.Context
 
 	excludeFile func(path, filename string) bool
+
+	logLevel string
 }
 
 func defaultConfig(opts ...Option) (*config, error) {
@@ -96,6 +95,7 @@ func defaultConfig(opts ...Option) (*config, error) {
 		excludeFile: func(path, filename string) bool {
 			return false
 		},
+		logLevel: "error",
 	}
 
 	for _, opt := range opts {
@@ -143,6 +143,14 @@ func (c *config) Processf(process float64, format string, arg ...any) {
 		c.process(msg, process)
 	} else {
 		log.Info(msg, process)
+	}
+}
+
+func WithLogLevel(level string) Option {
+	return func(c *config) error {
+		log.SetLevel(level)
+		c.logLevel = level
+		return nil
 	}
 }
 
@@ -365,20 +373,6 @@ func WithProgramDescription(desc string) Option {
 	}
 }
 
-func WithDatabasePath(path string) Option {
-	return func(c *config) error {
-		if utils.GetFirstExistedFile(path) == "" {
-			return nil
-		}
-		if absPath, err := filepath.Abs(path); err != nil {
-			log.Errorf("get abs path error: %v", err)
-		} else {
-			c.databasePath = absPath
-		}
-		return nil
-	}
-}
-
 // save to database, please set the program name
 func WithProgramName(name string) Option {
 	return func(c *config) error {
@@ -508,7 +502,6 @@ var Exports = map[string]any{
 	"withExternLib":          WithExternLib,
 	"withExternValue":        WithExternValue,
 	"withProgramName":        WithProgramName,
-	"withDatabasePath":       WithDatabasePath,
 	"withDescription":        WithProgramDescription,
 	"withProcess":            WithProcess,
 	"withEntryFile":          WithFileSystemEntry,

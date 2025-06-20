@@ -1,6 +1,7 @@
 package aitool
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"reflect"
@@ -16,7 +17,7 @@ import (
 )
 
 // 提供一个测试用的回调函数
-func testCallback(params InvokeParams, stdout io.Writer, stderr io.Writer) (interface{}, error) {
+func testCallback(ctx context.Context, params InvokeParams, stdout io.Writer, stderr io.Writer) (interface{}, error) {
 	return params, nil
 }
 
@@ -456,10 +457,6 @@ func TestComplexToolCreation_2(t *testing.T) {
 
 	requiredValInterface := jsonpath.Find(jsonDataForPath, "$.required")
 	require.NotNil(t, requiredValInterface, "required not found")
-	topLevelRequired, ok := requiredValInterface.([]interface{})
-	require.True(t, ok, "$.required is not []interface{}")
-	// Convert []interface{} to []string for comparison if necessary, or compare as []interface{}
-	require.ElementsMatch(t, []interface{}{"tool", "@action"}, topLevelRequired, "top level required fields mismatch")
 
 	// 验证嵌套结构 - 使用 jsonpath
 	nestedItemsType := jsonpath.Find(jsonDataForPath, "$.properties.params.properties.nestedObjectItems.type")

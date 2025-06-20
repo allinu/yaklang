@@ -1,11 +1,8 @@
 package yakscripttools
 
 import (
-	"context"
 	"embed"
 	"encoding/json"
-	"fmt"
-	"io"
 	"io/fs"
 	"path/filepath"
 	"strings"
@@ -13,25 +10,40 @@ import (
 
 	"github.com/yaklang/yaklang/common/consts"
 	"github.com/yaklang/yaklang/common/schema"
+	"github.com/yaklang/yaklang/common/yakgrpc/yakit"
 
-	"github.com/google/uuid"
 	"github.com/yaklang/yaklang/common/ai/aid/aitool"
 	"github.com/yaklang/yaklang/common/ai/aid/aitool/buildinaitools/yakscripttools/metadata"
 	"github.com/yaklang/yaklang/common/log"
-	"github.com/yaklang/yaklang/common/mcp/mcp-go/mcp"
 	"github.com/yaklang/yaklang/common/mcp/yakcliconvert"
 	"github.com/yaklang/yaklang/common/utils/filesys"
-	"github.com/yaklang/yaklang/common/yak"
-	"github.com/yaklang/yaklang/common/yak/antlr4yak"
 	"github.com/yaklang/yaklang/common/yak/static_analyzer"
-	"github.com/yaklang/yaklang/common/yak/yaklib"
-	"github.com/yaklang/yaklang/common/yakgrpc/ypb"
-
-	_ "github.com/yaklang/yaklang/common/yak"
 )
 
 //go:embed yakscriptforai/**
 var yakScriptFS embed.FS
+
+func init() {
+	yakit.RegisterPostInitDatabaseFunction(func() error {
+		if !consts.IsDevMode() {
+			const key = "2b709ef7252a06a0c1cfbb952f77f976"
+			if yakit.Get(key) == consts.ExistedBuildInAIToolEmbedFSHash {
+				return nil
+			}
+			log.Debug("start to load build in ai tools")
+			defer func() {
+				hash, _ := BuildInAIToolHash()
+				yakit.Set(key, hash)
+			}()
+		}
+		OverrideYakScriptAiTools()
+		return nil
+	})
+}
+
+func BuildInAIToolHash() (string, error) {
+	return filesys.CreateEmbedFSHash(yakScriptFS)
+}
 
 var overrideYakScriptAiToolsOnce sync.Once
 
@@ -102,95 +114,29 @@ func loadYakScriptToAiTools(name string, content string) *schema.AIYakTool {
 	}
 }
 
-func ConvertYakScriptAiToolsToMCPTools(aiTools []*schema.AIYakTool) []*aitool.Tool {
-	tools := []*aitool.Tool{}
-	for _, aiTool := range aiTools {
-		tool := mcp.NewTool(aiTool.Name)
-		tool.Description = aiTool.Description
-		dataMap := map[string]any{}
-		err := json.Unmarshal([]byte(aiTool.Params), &dataMap)
-		if err != nil {
-			log.Errorf("unmarshal aiTool.Params failed: %v", err)
-			continue
-		}
-		tool.InputSchema.FromMap(dataMap)
-		at, err := aitool.NewFromMCPTool(
-			tool,
-			aitool.WithDescription(aiTool.Description),
-			aitool.WithKeywords(strings.Split(aiTool.Keywords, ",")),
-			aitool.WithCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
-				ctx, cancel := context.WithCancel(context.Background())
-				defer cancel()
-				runtimeId := params.GetString("runtime_id")
-				if runtimeId == "" {
-					runtimeId = uuid.New().String()
-				}
-				yakitClient := yaklib.NewVirtualYakitClientWithRuntimeID(func(i *ypb.ExecResult) error {
-					if i.IsMessage {
-						stdout.Write([]byte(yaklib.ConvertExecResultIntoLog(i)))
-						stdout.Write([]byte("\n"))
-					}
-					return nil
-				}, runtimeId)
-				engine := yak.NewYakitVirtualClientScriptEngine(yakitClient)
+var toolCovertHandle func(aitools []*schema.AIYakTool) []*aitool.Tool
 
-				var args []string
-				for k, v := range params {
-					args = append(args, "--"+k, fmt.Sprint(v))
-				}
-				cliApp := yak.GetHookCliApp(args)
-				engine.RegisterEngineHooks(func(ae *antlr4yak.Engine) error {
-					yak.BindYakitPluginContextToEngine(
-						ae,
-						yak.CreateYakitPluginContext(
-							runtimeId,
-						).WithContext(
-							ctx,
-						).WithContextCancel(
-							cancel,
-						).WithCliApp(
-							cliApp,
-						).WithYakitClient(
-							yakitClient,
-						),
-					)
-					return nil
-				})
+func RegisterYakScriptAiToolsCovertHandle(handle func(aitools []*schema.AIYakTool) []*aitool.Tool) {
+	toolCovertHandle = handle
+}
 
-				_, err = engine.ExecuteExWithContext(ctx, aiTool.Content, map[string]interface{}{
-					"RUNTIME_ID":   runtimeId,
-					"CTX":          ctx,
-					"PLUGIN_NAME":  runtimeId + ".yak",
-					"YAK_FILENAME": runtimeId + ".yak",
-				})
-				if err != nil {
-					log.Errorf("execute ex with context failed: %v", err)
-					stderr.Write([]byte(err.Error()))
-					return nil, err
-				}
-				return "", nil
-			}))
-		if err != nil {
-			log.Errorf(`at.NewFromMCPTool(tool): %v`, err)
-			return nil
-		}
-		tools = append(tools, at)
+func covertTools(tools []*schema.AIYakTool) []*aitool.Tool {
+	if toolCovertHandle == nil {
+		return nil
 	}
-	return tools
+	return toolCovertHandle(tools)
 }
 
 func GetAllYakScriptAiTools() []*aitool.Tool {
-	OverrideYakScriptAiTools()
 	db := consts.GetGormProfileDatabase()
 	allAiTools, err := schema.SearchAIYakTool(db, "")
 	if err != nil {
 		log.Errorf("search ai yak tool failed: %v", err)
 		return nil
 	}
-	return ConvertYakScriptAiToolsToMCPTools(allAiTools)
+	return covertTools(allAiTools)
 }
 func GetYakScriptAiTools(names ...string) []*aitool.Tool {
-	OverrideYakScriptAiTools()
 	db := consts.GetGormProfileDatabase()
 	tools := []*schema.AIYakTool{}
 	toolsNameMap := map[string]struct{}{}
@@ -208,5 +154,5 @@ func GetYakScriptAiTools(names ...string) []*aitool.Tool {
 			tools = append(tools, tool)
 		}
 	}
-	return ConvertYakScriptAiToolsToMCPTools(tools)
+	return covertTools(tools)
 }

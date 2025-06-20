@@ -22,6 +22,7 @@ import (
 	"github.com/yaklang/yaklang/common/utils/grpc_recovery"
 
 	"github.com/yaklang/yaklang/common/crep"
+	"github.com/yaklang/yaklang/common/yak/depinjector"
 	"github.com/yaklang/yaklang/common/yak/yaklang"
 
 	"github.com/yaklang/yaklang/common/netx"
@@ -40,7 +41,6 @@ import (
 	"github.com/yaklang/yaklang/common/utils/tlsutils"
 	"github.com/yaklang/yaklang/common/utils/umask"
 	"github.com/yaklang/yaklang/common/yak"
-	"github.com/yaklang/yaklang/common/yak/antlr4nasl"
 	debugger "github.com/yaklang/yaklang/common/yak/interactive_debugger"
 	"github.com/yaklang/yaklang/common/yak/yaklib"
 	"github.com/yaklang/yaklang/common/yak/yaklib/codec"
@@ -60,9 +60,9 @@ var (
 	goVersion  string
 )
 
-func initializeDatabase(projectDatabase string, profileDBName string) error {
+func initializeDatabase(projectDatabase string, profileDBName string, isIRify ...bool) error {
 	// project and profile
-	consts.InitializeYakitDatabase(projectDatabase, profileDBName)
+	consts.InitializeYakitDatabase(projectDatabase, profileDBName, isIRify...)
 
 	// cve
 	_, err := consts.InitializeCVEDatabase()
@@ -158,7 +158,7 @@ func init() {
 		}
 	}
 	yaklib.SetEngineInterface(yak.NewScriptEngine(1000))
-	yak.SetNaslExports(antlr4nasl.Exports)
+	depinjector.DependencyInject()
 	yak.InitYaklangLib()
 }
 
@@ -391,6 +391,9 @@ var startGRPCServerCommand = cli.Command{
 		},
 	},
 	Action: func(c *cli.Context) error {
+		if c.String("home") != "" {
+			os.Setenv("YAKIT_HOME", c.String("home"))
+		}
 		if c.Bool("pprof") && c.IsSet("auto-pprof") {
 			return utils.Error("Parameters 'pprof' and 'auto-pprof' cannot be set at the same time")
 		}
@@ -430,7 +433,9 @@ var startGRPCServerCommand = cli.Command{
 			go startPProf(pprofSec)
 		}
 		log.Info("start to initialize database")
-		err := initializeDatabase(c.String("project-db"), c.String("profile-db"))
+
+		isIRify := c.String("frontend") == "irify"
+		err := initializeDatabase(c.String("project-db"), c.String("profile-db"), isIRify)
 		if err != nil {
 			log.Errorf("init database failed: %s", err)
 			return err
@@ -453,10 +458,6 @@ var startGRPCServerCommand = cli.Command{
 			if err != nil {
 				log.Warnf("mkdir certdir[%s] failed: %s", certDir, err)
 			}
-		}
-
-		if c.String("home") != "" {
-			os.Setenv("YAKIT_HOME", c.String("home"))
 		}
 
 		secret := c.String("secret")

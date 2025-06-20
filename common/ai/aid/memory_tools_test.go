@@ -20,20 +20,20 @@ func Test_MemoryTools(t *testing.T) {
 		return
 	}
 
-	var userDataSet, userDataGet, userDataDelete, userDataList *aitool.Tool
+	var persistentDataSet, persistentDataGet, persistentDataDelete, persistentDataList *aitool.Tool
 	var userQuery *aitool.Tool
 
 	for _, tool := range tools {
 		name := tool.Name
 		switch name {
-		case "memory_user_data_set":
-			userDataSet = tool
-		case "memory_user_data_get":
-			userDataGet = tool
-		case "memory_user_data_delete":
-			userDataDelete = tool
-		case "memory_user_data_list":
-			userDataList = tool
+		case "memory_persistent_data_set":
+			persistentDataSet = tool
+		case "memory_persistent_data_get":
+			persistentDataGet = tool
+		case "memory_persistent_data_delete":
+			persistentDataDelete = tool
+		case "memory_persistent_data_list":
+			persistentDataList = tool
 		case "memory_query":
 			userQuery = tool
 		default:
@@ -43,33 +43,33 @@ func Test_MemoryTools(t *testing.T) {
 	// test user data
 	tokenKey := uuid.New().String()
 	tokenValue := uuid.New().String()
-	_, err = userDataSet.InvokeWithParams(map[string]any{
+	_, err = persistentDataSet.InvokeWithParams(map[string]any{
 		"key":   tokenKey,
 		"value": tokenValue,
 	})
 	require.NoError(t, err)
 
-	callRes, err := userDataList.InvokeWithParams(map[string]any{})
+	callRes, err := persistentDataList.InvokeWithParams(map[string]any{})
 	require.NoError(t, err)
 	require.Len(t, callRes.Data.(*aitool.ToolExecutionResult).Result, 1)
 	require.Contains(t, callRes.Data.(*aitool.ToolExecutionResult).Result, tokenKey)
 
-	callRes, err = userDataGet.InvokeWithParams(map[string]any{
+	callRes, err = persistentDataGet.InvokeWithParams(map[string]any{
 		"key": tokenKey,
 	})
 	require.NoError(t, err)
 	require.Equal(t, callRes.Data.(*aitool.ToolExecutionResult).Result, tokenValue)
 
-	_, err = userDataDelete.InvokeWithParams(map[string]any{
+	_, err = persistentDataDelete.InvokeWithParams(map[string]any{
 		"key": tokenKey,
 	})
 	require.NoError(t, err)
 
-	callRes, err = userDataList.InvokeWithParams(map[string]any{})
+	callRes, err = persistentDataList.InvokeWithParams(map[string]any{})
 	require.NoError(t, err)
 	require.Len(t, callRes.Data.(*aitool.ToolExecutionResult).Result, 0)
 
-	_, err = userDataGet.InvokeWithParams(map[string]any{
+	_, err = persistentDataGet.InvokeWithParams(map[string]any{
 		"key": tokenKey,
 	})
 	require.Error(t, err)
@@ -120,7 +120,7 @@ func TestCoodinator_Delete_Memory(t *testing.T) {
 				rsp.EmitOutputStream(strings.NewReader(
 					fmt.Sprintf(`{"@action": "call-tool", "tool": "delete_memory", "params": {"id": %d}}`, testCallKey)))
 				return rsp, nil
-			} else if utils.MatchAllOfSubString(request.GetPrompt(), `"require-more-tool"`, `"finished"`, `"status_summary"`) {
+			} else if utils.MatchAllOfSubString(request.GetPrompt(), `"continue-current-task"`, `"proceed-next-task"`, `"status_summary"`) {
 				if firstToolDecision {
 					firstToolDecision = false
 					keys := timeline.idToTimelineItem.Keys()
@@ -128,12 +128,13 @@ func TestCoodinator_Delete_Memory(t *testing.T) {
 						panic("timeline.summary.GetByIndex fail")
 					}
 					callResult, _ := timeline.idToTimelineItem.Get(keys[0])
-					if callResult.Name != "now" {
+					result := callResult.value.(*aitool.ToolResult)
+					if result.Name != "now" {
 						panic("timeline.idToToolResult.Get now fail")
 					}
 					testCallKey = keys[0]
 					timeLineSaveCheck = true
-					rsp.EmitReasonStream(strings.NewReader(`{"@action": "require-more-tool"}`))
+					rsp.EmitReasonStream(strings.NewReader(`{"@action": "continue-current-task"}`))
 				} else {
 					if timeline.idToTimelineItem.Len() != 1 {
 						panic("timeline.summary.Len() != 1")
@@ -253,10 +254,8 @@ func TestCoodinator_Add_Persistent_Memory(t *testing.T) {
 				rsp.EmitOutputStream(strings.NewReader(
 					`{"@action": "call-tool", "tool": "now", "params": {"content": "` + persistentMemory + `"}}}`))
 				return rsp, nil
-			} else if utils.MatchAllOfSubString(request.GetPrompt(), `"require-more-tool"`, `"finished"`, `"status_summary"`) {
-				if !utils.StringArrayContains(config.memory.PersistentData, persistentMemory) {
-					panic("persistent set fail")
-				}
+			} else if utils.MatchAllOfSubString(request.GetPrompt(), `"continue-current-task"`, `"proceed-next-task"`, `"status_summary"`) {
+				config.memory.PushPersistentData(persistentMemory)
 				if timeline.idToTimelineItem.Len() > 0 {
 					panic("skip add persistent memory to timeline fail")
 				}

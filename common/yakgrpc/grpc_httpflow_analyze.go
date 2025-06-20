@@ -3,6 +3,7 @@ package yakgrpc
 import (
 	"context"
 	"fmt"
+	"github.com/samber/lo"
 	"strconv"
 	"strings"
 	"sync"
@@ -213,22 +214,25 @@ func (m *HTTPFlowAnalyzeManger) AnalyzeHTTPFlow(db *gorm.DB) (errs error) {
 		m.notifyProcess(1)
 		if err := recover(); err != nil {
 			errs = utils.JoinErrors(errs, utils.Errorf("panic: %s", err))
+			utils.PrintCurrentGoroutineRuntimeStack()
 			return
 		}
 	}()
 
 	source := m.source
 	if source == nil {
-		return m.AnalyzeHTTPFlowFromDb(db)
+		m.AnalyzeHTTPFlowFromDb(db)
+		return nil
 	}
 
 	if source.SourceType == AnalyzeHTTPFlowSourceDatabase {
-		return m.AnalyzeHTTPFlowFromDb(db)
+		m.AnalyzeHTTPFlowFromDb(db)
 	} else if source.SourceType == AnalyzeHTTPFlowSourceRawPacket {
 		return m.AnalyzeHTTPFlowFromRawPacket(db)
 	} else {
 		return utils.Errorf("unknown analyze source type: %s", source.SourceType)
 	}
+	return nil
 }
 
 func (m *HTTPFlowAnalyzeManger) AnalyzeHTTPFlowFromRawPacket(db *gorm.DB) error {
@@ -259,7 +263,7 @@ func (m *HTTPFlowAnalyzeManger) AnalyzeHTTPFlowFromRawPacket(db *gorm.DB) error 
 	return nil
 }
 
-func (m *HTTPFlowAnalyzeManger) AnalyzeHTTPFlowFromDb(db *gorm.DB) (errs error) {
+func (m *HTTPFlowAnalyzeManger) AnalyzeHTTPFlowFromDb(db *gorm.DB) {
 	totalCallBack := func(i int) {
 		atomic.AddInt64(&m.allHTTPFlowCount, int64(i))
 	}
@@ -268,34 +272,36 @@ func (m *HTTPFlowAnalyzeManger) AnalyzeHTTPFlowFromDb(db *gorm.DB) (errs error) 
 		query = yakit.FilterHTTPFlow(db, m.source.GetHTTPFlowFilter())
 	}
 	flowCh := yakit.YieldHTTPFlowsEx(query, m.ctx, totalCallBack)
-	errChan := make(chan error, m.concurrency)
 	swg := utils.NewSizedWaitGroup(m.concurrency, m.ctx)
 	for flow := range flowCh {
 		swg.Add(1)
 		go func(f *schema.HTTPFlow) {
-			defer swg.Done()
+			defer func() {
+				swg.Done()
+				// 处理完成后更新计数和进度
+				atomic.AddInt64(&m.handledHTTPFlowCount, 1)
+				m.notifyHandleFlowNum()
+				m.notifyProcess(float64(atomic.LoadInt64(&m.handledHTTPFlowCount)) / float64(atomic.LoadInt64(&m.allHTTPFlowCount)))
+			}()
+
+			if f == nil {
+				return
+			}
 			// 处理websocket流量
-			if flow.IsWebsocket {
-				m.handleWebsocket(db, flow)
+			if f.IsWebsocket {
+				m.handleWebsocket(db, f)
 			}
 			// hot patch
 			m.ExecHotPatch(db, f)
 			// mitm replace rule
 			if err := m.ExecReplacerRule(db, f); err != nil {
-				errChan <- err
+				log.Errorf("AnalyzeHTTPFlowFromDb ExecReplacerRule failed: %s", err)
 			}
-			// 处理完成后更新计数和进度
-			atomic.AddInt64(&m.handledHTTPFlowCount, 1)
-			m.notifyProcess(float64(atomic.LoadInt64(&m.handledHTTPFlowCount)) / float64(atomic.LoadInt64(&m.allHTTPFlowCount)))
-			m.notifyHandleFlowNum()
+
 		}(flow)
 	}
 	swg.Wait()
-	close(errChan)
-	for err := range errChan {
-		errs = utils.JoinErrors(errs, err)
-	}
-	return errs
+	return
 }
 
 func (m *HTTPFlowAnalyzeManger) handleWebsocket(db *gorm.DB, flow *schema.HTTPFlow) error {
@@ -345,20 +351,32 @@ func (m *HTTPFlowAnalyzeManger) handleWebsocket(db *gorm.DB, flow *schema.HTTPFl
 }
 
 func (m *HTTPFlowAnalyzeManger) ExecHotPatch(db *gorm.DB, flow *schema.HTTPFlow) {
-	extract := func(ruleName string, flow *schema.HTTPFlow) {
+	extract := func(ruleName string, flow *schema.HTTPFlow, content ...string) {
 		yakit.UpdateHTTPFlowTags(db, flow)
+		extractDatas := lo.FilterMap(content, func(item string, index int) (schema.ExtractedData, bool) {
+			data := schema.ExtractedData{
+				Data: item,
+			}
+			if item != "" {
+				data.Data = item
+				return data, true
+			}
+			return data, false
+		})
+
 		analyzed := &schema.AnalyzedHTTPFlow{
 			ResultId:        m.analyzeId,
 			Rule:            "热加载规则",
 			RuleVerboseName: ruleName,
 			HTTPFlowId:      int64(flow.ID),
+			ExtractedData:   extractDatas,
 		}
 		err := db.Save(analyzed).Error
 		if err != nil {
 			log.Infof("save analyze result failed: %s", err)
 		}
 		atomic.AddInt64(&m.matchedHTTPFlowCount, 1)
-		m.notifyResult(analyzed, nil)
+		m.notifyResult(analyzed, extractDatas, flow)
 		m.notifyMatchedHTTPFlowNum()
 	}
 
@@ -468,7 +486,7 @@ func (m *HTTPFlowAnalyzeManger) ExecReplacerRule(db *gorm.DB, flow *schema.HTTPF
 				result := getAnalyzedHTTPFlow(rule, flow)
 				result.ExtractedData = extracts
 				saveAnalyzedHTTPFlow(result)
-				m.notifyResult(result, extracts)
+				m.notifyResult(result, extracts, flow)
 				handleColorAndTag(rule, flow)
 			}
 		}
@@ -483,7 +501,7 @@ func (m *HTTPFlowAnalyzeManger) ExecReplacerRule(db *gorm.DB, flow *schema.HTTPF
 				result := getAnalyzedHTTPFlow(rule, flow)
 				result.ExtractedData = extracts
 				saveAnalyzedHTTPFlow(result)
-				m.notifyResult(result, extracts)
+				m.notifyResult(result, extracts, flow)
 				handleColorAndTag(rule, flow)
 			}
 		}
@@ -509,7 +527,11 @@ func (m *HTTPFlowAnalyzeManger) notifyHandleFlowNum() {
 		atomic.LoadInt64(&m.allHTTPFlowCount)))
 }
 
-func (m *HTTPFlowAnalyzeManger) notifyResult(result *schema.AnalyzedHTTPFlow, extractedData []schema.ExtractedData) {
+func (m *HTTPFlowAnalyzeManger) notifyResult(
+	result *schema.AnalyzedHTTPFlow,
+	extractedData []schema.ExtractedData,
+	flow *schema.HTTPFlow,
+) {
 	var builder strings.Builder
 	for i, e := range extractedData {
 		if i > 0 {
@@ -518,8 +540,13 @@ func (m *HTTPFlowAnalyzeManger) notifyResult(result *schema.AnalyzedHTTPFlow, ex
 		builder.WriteString(e.Data)
 	}
 	content := builder.String()
+	ruleData := result.ToGRPCModel()
+	ruleData.Method = flow.Method
+	ruleData.Url = flow.Url
+	ruleData.StatusCode = flow.StatusCode
+
 	m.stream.Send(&ypb.AnalyzeHTTPFlowResponse{
-		RuleData:         result.ToGRPCModel(),
+		RuleData:         ruleData,
 		ExtractedContent: content,
 	})
 }

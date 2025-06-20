@@ -13,6 +13,9 @@ func (c *Config) doWaitAgreeWithPolicy(ctx context.Context, doWaitAgreeWithPolic
 	if ep.checkpoint != nil && ep.checkpoint.Finished { // check ep finished, is recover task or not
 		return
 	}
+	if ctx == nil {
+		ctx = c.epm.ctx
+	}
 	defer func() {
 		if ep.checkpoint != nil {
 			if err := c.submitCheckpointResponse(ep.checkpoint, ep.GetParams()); err != nil {
@@ -33,28 +36,31 @@ func (c *Config) doWaitAgreeWithPolicy(ctx context.Context, doWaitAgreeWithPolic
 			c.EmitInfo("auto agree timeout, use default action: pass")
 		}
 	case AgreePolicyManual:
-		manualCtx, cancel := context.WithCancel(c.epm.ctx)
+		manualCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
-		if c.agreeAssistant != nil {
+		if c.agreeManualCallback != nil { // if agreeManualCallback is not nil, use it help manual agree
 			go func() {
-				res, err := c.agreeAssistant.Callback(manualCtx, c)
+				res, err := c.agreeManualCallback(manualCtx, c)
 				if err != nil {
 					log.Errorf("agree assistant callback error: %v", err)
 				} else {
-					ep.SetParams(res.Param)
-					ep.Release()
+					ep.SetParams(res)
+					for i := 0; i < 3; i++ {
+						ep.Release()
+						time.Sleep(time.Second)
+					}
 				}
 			}()
 		}
-		ep.Wait()
+		ep.WaitContext(ctx)
 	case AgreePolicyAI:
 		if !c.agreeRiskCtrl.enabled() {
 			c.EmitInfo("policy[ai]: ai agree risk control is not enabled, use manual agree (risk control is disabled)")
-			ep.Wait()
+			ep.WaitContext(ctx)
 			return
 		}
 
-		riskCtrlCtx, cancel := context.WithCancel(c.epm.ctx)
+		riskCtrlCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
 		wg := new(sync.WaitGroup)
@@ -70,7 +76,7 @@ func (c *Config) doWaitAgreeWithPolicy(ctx context.Context, doWaitAgreeWithPolic
 				return
 			}
 
-			if result != nil && !result.Skipped {
+			if result != nil {
 				c.EmitRiskControlPrompt(ep.id, result)
 			}
 			if c.agreeAIScore > 0 && result.Score >= c.agreeAIScore {
@@ -80,7 +86,7 @@ func (c *Config) doWaitAgreeWithPolicy(ctx context.Context, doWaitAgreeWithPolic
 			c.EmitInfo("ai agree risk control ")
 			ep.Release()
 		}()
-		ep.Wait()
+		ep.WaitContext(ctx)
 		cancel()
 		wg.Wait()
 	case AgreePolicyAIAuto:
@@ -95,7 +101,7 @@ func (c *Config) doWaitAgreeWithPolicy(ctx context.Context, doWaitAgreeWithPolic
 			return
 		}
 
-		riskCtrlCtx, cancel := context.WithCancel(c.epm.ctx)
+		riskCtrlCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
 		wg := new(sync.WaitGroup)
@@ -123,7 +129,7 @@ func (c *Config) doWaitAgreeWithPolicy(ctx context.Context, doWaitAgreeWithPolic
 				ep.Release()
 			}
 		}()
-		ep.Wait()
+		ep.WaitContext(ctx)
 		cancel()
 		wg.Wait()
 	}

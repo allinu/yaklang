@@ -29,6 +29,7 @@ type rtInfo struct {
 	// We currently ignore the InputIface.
 	InputIface, OutputIface uint32
 	Priority                uint32
+	IsScoped                bool
 }
 
 // routeSlice implements sort.Interface to sort routes by Priority.
@@ -45,9 +46,11 @@ func (r routeSlice) Swap(i, j int) {
 }
 
 type router struct {
-	ifaces map[int]net.Interface
-	addrs  map[int]ipAddrs
-	v4, v6 routeSlice
+	ifaces         map[int]net.Interface
+	addrs          map[int]ipAddrs
+	v4, v6         routeSlice
+	defaultRouteV4 routeSlice
+	defaultRouteV6 routeSlice
 }
 
 func (r *router) String() string {
@@ -152,15 +155,24 @@ func (r *router) route(isV6 bool, routes routeSlice, input net.HardwareAddr, src
 			}
 			log.Debugf("%v gateway: %v, found new route to %v, mask size: %v(>=%v), use out-iface: %v(%v->%v)", idx, rt.Gateway, dst.String(), candSpec, curSpec, rt.OutputIface, rt.Src, rt.Dst)
 		}
-
-		if rt.Gateway.To4() == nil {
-			log.Debugf("skip link-local route: %v", rt)
-			continue
-		}
 		mostSpecificRt = rt
 	}
 	if mostSpecificRt != nil {
 		return int(mostSpecificRt.OutputIface), mostSpecificRt.Gateway, mostSpecificRt.PrefSrc, nil
+	}
+	if !isV6 {
+		for _, info := range r.defaultRouteV4 {
+			//如果是虚拟机创建，默认不去走，优先选择出网路由，如果没找到，交给命令行去解决
+			if !info.IsScoped {
+				return int(info.OutputIface), info.Gateway, info.PrefSrc, nil
+			}
+		}
+	} else {
+		for _, info := range r.defaultRouteV6 {
+			if !info.IsScoped {
+				return int(info.OutputIface), info.Gateway, info.PrefSrc, nil
+			}
+		}
 	}
 
 	err = fmt.Errorf("no route found for %v", dst)

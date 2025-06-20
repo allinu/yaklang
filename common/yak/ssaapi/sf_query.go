@@ -6,7 +6,6 @@ import (
 	"github.com/yaklang/yaklang/common/yak/ssa"
 
 	"github.com/samber/lo"
-	"github.com/yaklang/yaklang/common/log"
 	"github.com/yaklang/yaklang/common/schema"
 	"github.com/yaklang/yaklang/common/syntaxflow/sfdb"
 	"github.com/yaklang/yaklang/common/syntaxflow/sfvm"
@@ -56,9 +55,13 @@ func (config *queryConfig) GetFrame() (*sfvm.SFFrame, error) {
 
 	// use rule compiled
 	if config.rule != nil {
-		frame, err := vm.Load(config.rule)
+		frame, resave, err := vm.Load(config.rule)
 		if err != nil {
 			return nil, utils.Errorf("SyntaxflowQuery: load rule %s error: %v", config.rule.RuleName, err)
+		}
+		if resave {
+			// save rule to db
+			sfdb.MigrateSyntaxFlow("", config.rule)
 		}
 		return frame, nil
 	}
@@ -79,7 +82,11 @@ func (config *queryConfig) GetFrame() (*sfvm.SFFrame, error) {
 		if err != nil {
 			return nil, utils.Errorf("SyntaxflowQuery: load rule %s from db error: %v", config.ruleName, err)
 		}
-		frame, err := vm.Load(rule)
+		frame, resave, err := vm.Load(rule)
+		if resave {
+			// save rule to db
+			sfdb.MigrateSyntaxFlow("", config.rule)
+		}
 		if err != nil {
 			return nil, utils.Errorf("SyntaxflowQuery: load rule %s to sfvm error: %v", config.ruleName, err)
 		}
@@ -160,7 +167,7 @@ func QuerySyntaxflow(opt ...QueryOption) (*SyntaxFlowResult, error) {
 		// save ret
 		if config.save {
 			process(float64(total-1)/float64(total), "save result")
-			resultID, err := ret.Save(config.kind, config.taskID)
+			resultID, err := ret.SaveWithContext(config.ctx, config.kind, config.taskID)
 			_ = resultID
 			if err != nil {
 				return ret, utils.Wrap(err, "SyntaxflowQuery: save to DB failed")

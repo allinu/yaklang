@@ -1,9 +1,9 @@
 package ssaapi
 
 import (
+	"context"
 	"sync/atomic"
 
-	"github.com/yaklang/yaklang/common/log"
 	"github.com/yaklang/yaklang/common/utils"
 	"github.com/yaklang/yaklang/common/yak/ssa"
 )
@@ -107,8 +107,24 @@ func (a *AnalyzeContext) check(v *Value) (needExit bool, recoverStack func()) {
 		a.reachedDepthLimited = true
 		return
 	}
+
+	ctx := a.getContext()
+	select {
+	case <-ctx.Done():
+		log.Warnf("context is done, stop it")
+		return true, recoverStack
+	default:
+	}
+
 	needExit = false
 	return
+}
+
+func (a *AnalyzeContext) getContext() context.Context {
+	if a.config != nil && a.config.ctx != nil {
+		return a.config.ctx
+	}
+	return context.Background()
 }
 
 // needCrossProcess If the SSA-ID of the function from-value ·and to-value is different,

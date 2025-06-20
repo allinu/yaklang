@@ -17,6 +17,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yaklang/yaklang/common/ai/aid/aitool/buildinaitools/yakscripttools"
+	"github.com/yaklang/yaklang/common/aiforge"
+
 	"github.com/antchfx/xmlquery"
 	"github.com/yaklang/pcap"
 	"github.com/yaklang/yaklang/common/consts"
@@ -49,9 +52,10 @@ import (
 
 var UtilsCommands = []*cli.Command{
 	createYakToolMetadataCommand(),
+	createBuildInForgeMetadataCommand(),
 	{
-		Name:  "embed-fs-hash",
-		Usage: `Generate Current Embed File System(yak/syntaxflow) Hash`,
+		Name:  "embed-fs-hash", // 此命令会被CI调用，用于自动生成hash.go文件。如果希望在提交代码时自动更新静态资源的哈希值，需要在.github/workflows/update-embed-fs.yml中添加对应的静态资源路径
+		Usage: `Generate Current Embed File System(yak/syntaxflow/aiforge/aitool) Hash`,
 		Flags: []cli.Flag{
 			cli.StringFlag{
 				Name: "type",
@@ -75,7 +79,7 @@ var UtilsCommands = []*cli.Command{
 
 			rets := []string{strings.ToLower(c.String("type"))}
 			if c.Bool("all") {
-				rets = []string{"yak", "syntaxflow"}
+				rets = []string{"yak", "syntaxflow", "forge", "aitool"}
 			}
 			for _, ret := range rets {
 				switch ret {
@@ -132,6 +136,72 @@ var UtilsCommands = []*cli.Command{
 						}
 
 						re := regexp.MustCompile(`(const ExistedSyntaxFlowEmbedFSHash string = ")([a-zA-Z0-9]+)(")`)
+						newContent := re.ReplaceAllString(string(templ), "${1}"+result+"${3}")
+						err = os.RemoveAll(template + ".bak")
+						if err != nil {
+							return err
+						}
+						err = os.Rename(template, template+".bak")
+						if err != nil {
+							return err
+						}
+						err = os.WriteFile(template, []byte(newContent), 0o644)
+						if err != nil {
+							return err
+						}
+					}
+				case "forge":
+					result, err := aiforge.BuildInForgeHash()
+					if err != nil {
+						return err
+					}
+					fmt.Println(result)
+					if c.Bool("override") {
+						if consts.ExistedBuildInForgeEmbedFSHash == result {
+							continue
+						}
+						if matched, _ := regexp_utils.NewYakRegexpUtils("[0-9a-fA-F]+").MatchString(result); !matched {
+							return utils.Errorf("invalid hash: %v", result)
+						}
+						templ, err := os.ReadFile(template)
+						if err != nil {
+							return err
+						}
+
+						re := regexp.MustCompile(`(const ExistedBuildInForgeEmbedFSHash string = ")([a-zA-Z0-9]*)(")`)
+						newContent := re.ReplaceAllString(string(templ), "${1}"+result+"${3}")
+						err = os.RemoveAll(template + ".bak")
+						if err != nil {
+							return err
+						}
+						err = os.Rename(template, template+".bak")
+						if err != nil {
+							return err
+						}
+						err = os.WriteFile(template, []byte(newContent), 0o644)
+						if err != nil {
+							return err
+						}
+					}
+				case "aitool":
+					result, err := yakscripttools.BuildInAIToolHash()
+					if err != nil {
+						return err
+					}
+					fmt.Println(result)
+					if c.Bool("override") {
+						if consts.ExistedBuildInAIToolEmbedFSHash == result {
+							continue
+						}
+						if matched, _ := regexp_utils.NewYakRegexpUtils("[0-9a-fA-F]+").MatchString(result); !matched {
+							return utils.Errorf("invalid hash: %v", result)
+						}
+						templ, err := os.ReadFile(template)
+						if err != nil {
+							return err
+						}
+
+						re := regexp.MustCompile(`(const ExistedBuildInAIToolEmbedFSHash string = ")([a-zA-Z0-9]*)(")`)
 						newContent := re.ReplaceAllString(string(templ), "${1}"+result+"${3}")
 						err = os.RemoveAll(template + ".bak")
 						if err != nil {
@@ -808,7 +878,12 @@ var XPathCommand = &cli.Command{
 	Name:    "xpath",
 	Usage:   "xpath query",
 	Aliases: []string{},
-	Flags:   []cli.Flag{},
+	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:  "o",
+			Usage: "output to file",
+		},
+	},
 	Action: func(c *cli.Context) error {
 		// if no --argument, just use os.Arg
 		if len(c.Args()) == 0 {
@@ -817,6 +892,17 @@ var XPathCommand = &cli.Command{
 
 		var Query string
 		var Targets []string
+		var outputFile string
+
+		if c.String("o") != "" {
+			outputFile = c.String("o")
+			// Create or truncate the output file
+			f, err := os.Create(outputFile)
+			if err != nil {
+				return utils.Errorf("failed to create output file: %s, err: %v", outputFile, err)
+			}
+			defer f.Close()
+		}
 
 		if len(c.Args()) == 1 {
 			Query = c.Args()[0]
@@ -829,18 +915,37 @@ var XPathCommand = &cli.Command{
 		}
 
 		show := func(node ...*xmlquery.Node) {
+			var output strings.Builder
 			for index, i := range node {
-				fmt.Printf("\n---------------------- [%d] ----------------------\n", index)
+				output.WriteString(fmt.Sprintf("\n<!--                   [%d]                   -->\n", index))
 				if i == nil {
 					continue
 				}
 				xml := i.OutputXML(true)
 				if formatted := xmlfmt.FormatXML(xml, "", "  ", true); formatted != "" {
-					fmt.Printf("%v", formatted)
+					output.WriteString(fmt.Sprintf("%v", formatted))
 				} else {
-					fmt.Printf("%v", xml)
+					output.WriteString(fmt.Sprintf("%v", xml))
 				}
-				fmt.Printf("\n")
+				output.WriteString("\n")
+			}
+
+			if outputFile != "" {
+				// Append to the output file
+				f, err := os.OpenFile(outputFile, os.O_APPEND|os.O_WRONLY, 0644)
+				if err != nil {
+					log.Errorf("failed to open output file: %s, err: %v", outputFile, err)
+					return
+				}
+				defer f.Close()
+
+				_, err = f.WriteString(output.String())
+				if err != nil {
+					log.Errorf("failed to write to output file: %s, err: %v", outputFile, err)
+				}
+			} else {
+				// Write to stdout
+				fmt.Print(output.String())
 			}
 		}
 
@@ -888,6 +993,9 @@ var XPathCommand = &cli.Command{
 				}
 			}
 
+		}
+		if outputFile != "" {
+			log.Infof("Results written to: %s", outputFile)
 		}
 		return nil
 	},

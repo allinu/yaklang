@@ -3,6 +3,7 @@ package aitool
 import (
 	"encoding/json"
 	"fmt"
+	"golang.org/x/net/context"
 	"io"
 	"strings"
 	"testing"
@@ -89,7 +90,7 @@ func TestExecuteToolWithCapture(t *testing.T) {
 	// 创建工具
 	tool, err := New("captureTest",
 		WithDescription("测试捕获输出的工具"),
-		WithCallback(callback),
+		WithSimpleCallback(callback),
 		WithStringParam("command",
 			WithParam_Description("要执行的命令"),
 			WithParam_Required(),
@@ -111,7 +112,7 @@ func TestExecuteToolWithCapture(t *testing.T) {
 		"warning": false,
 	}
 
-	result1, err := tool.ExecuteToolWithCapture(params1, nil, nil)
+	result1, err := tool.ExecuteToolWithCapture(context.Background(), params1, nil, nil)
 	if err != nil {
 		t.Errorf("执行工具失败: %v", err)
 	}
@@ -130,7 +131,7 @@ func TestExecuteToolWithCapture(t *testing.T) {
 		"warning": true,
 	}
 
-	result2, err := tool.ExecuteToolWithCapture(params2, nil, nil)
+	result2, err := tool.ExecuteToolWithCapture(context.Background(), params2, nil, nil)
 	if err != nil {
 		t.Errorf("执行工具失败: %v", err)
 	}
@@ -169,7 +170,7 @@ func TestToolResultIntegration(t *testing.T) {
 	// 创建工具
 	tool, err := New("integrationTest",
 		WithDescription("集成测试工具"),
-		WithCallback(callback),
+		WithSimpleCallback(callback),
 		WithStringParam("input",
 			WithParam_Description("输入值"),
 			WithParam_Required(),

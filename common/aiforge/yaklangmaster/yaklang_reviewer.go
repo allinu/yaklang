@@ -67,26 +67,23 @@ cli.check()
 		aiforge.WithAIDOptions(
 			aid.WithAgreeManual(),
 			aid.WithResultHandler(func(config *aid.Config) {
-				code, _ := config.GetMemory().UserDataGet("code")
+				code, _ := config.GetMemory().GetPersistentData("code")
 				callback(code)
 			}),
 			aid.WithExtendedActionCallback("set-code", func(config *aid.Config, action *aid.Action) {
 				codeContent := action.GetString("content")
-				config.GetMemory().StoreUserData(magicCode, codeContent)
+				config.GetMemory().SetPersistentData(magicCode, codeContent)
 			}),
-			aid.WithAgreeAIAssistant(&aid.AIAssistant{
-				Callback: func(ctx context.Context, config *aid.Config) (*aid.AIAssistantResult, error) {
-					m := config.GetMemory()
-					_, eventIns, ok := m.GetInteractiveEventLast()
-					if !ok {
-						return nil, utils.Error("Interactive Event Not Found")
-					}
-					res := &aid.AIAssistantResult{}
-					if eventIns.InteractiveEvent.Type == aid.EVENT_TYPE_TASK_REVIEW_REQUIRE {
-						res.Param = analyzeToolCallResult(m)
-					}
-					return res, nil
-				},
+			aid.WithManualAssistantCallback(func(ctx context.Context, config *aid.Config) (aitool.InvokeParams, error) {
+				m := config.GetMemory()
+				_, eventIns, ok := m.GetInteractiveEventLast()
+				if !ok {
+					return nil, utils.Error("Interactive Event Not Found")
+				}
+				if eventIns.InteractiveEvent.Type == aid.EVENT_TYPE_TASK_REVIEW_REQUIRE {
+					return analyzeToolCallResult(m), nil
+				}
+				return nil, nil
 			}),
 		),
 	)

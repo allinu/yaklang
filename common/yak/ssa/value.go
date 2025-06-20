@@ -3,7 +3,6 @@ package ssa
 import (
 	"strings"
 
-	"github.com/yaklang/yaklang/common/log"
 	"github.com/yaklang/yaklang/common/utils"
 	"github.com/yaklang/yaklang/common/yak/ssa/ssautil"
 )
@@ -194,7 +193,7 @@ func (b *FunctionBuilder) AssignVariable(variable *Variable, value Value) {
 	name := variable.GetName()
 	_ = name
 	if utils.IsNil(value) {
-		log.Infof("assign nil value to variable: %v, it will not work on ssa ir format", name)
+		log.Debugf("assign nil value to variable: %v, it will not work on ssa ir format", name)
 		return
 	}
 	scope := b.CurrentBlock.ScopeTable
@@ -208,8 +207,8 @@ func (b *FunctionBuilder) AssignVariable(variable *Variable, value Value) {
 			b.CurrentBlock.ScopeTable = scopet
 			obj := variable.object
 
-			v := b.CreateMemberCallVariable(obj, b.EmitConstInst("@value"))
-			p := b.CreateMemberCallVariable(obj, b.EmitConstInst("@pointer"))
+			v := b.CreateMemberCallVariable(obj, b.EmitConstInstPlaceholder("@value"))
+			p := b.CreateMemberCallVariable(obj, b.EmitConstInstPlaceholder("@pointer"))
 			p.SetKind(ssautil.PointerVariable)
 			scopet.AssignVariable(v, value)
 			if p.GetValue() == nil {
@@ -236,8 +235,8 @@ func (b *FunctionBuilder) AssignVariable(variable *Variable, value Value) {
 				}()
 				b.CurrentBlock.ScopeTable = scopet
 
-				v := b.ReadMemberCallValue(obj, b.EmitConstInst("@value"))
-				p := b.ReadMemberCallValue(obj, b.EmitConstInst("@pointer"))
+				v := b.ReadMemberCallValue(obj, b.EmitConstInstPlaceholder("@value"))
+				p := b.ReadMemberCallValue(obj, b.EmitConstInstPlaceholder("@pointer"))
 
 				n := strings.TrimPrefix(p.String(), "&")
 				originName, _ := SplitName(n)
@@ -262,7 +261,7 @@ func (b *FunctionBuilder) AssignVariable(variable *Variable, value Value) {
 		}
 	}
 
-	if b.isTryBuildValue() {
+	if b.isTryBuildValue() && !variable.GetLocal() {
 		b.TryBuildValueWithoutParent(variable.GetName(), value)
 	}
 

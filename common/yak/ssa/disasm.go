@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yaklang/yaklang/common/log"
-
 	"github.com/samber/lo"
 	"github.com/yaklang/yaklang/common/utils"
 )
@@ -407,13 +405,24 @@ func (n *Next) String() string {
 
 func (e *ErrorHandler) String() string {
 	finalName := "nil"
-	if e.final != nil {
-		finalName = e.final.GetName()
+	if e.Final != nil {
+		finalName = e.Final.GetName()
 	}
 	return fmt.Sprintf(
 		"try %s; catch %s; final %s; rest %s",
 		// e.try.GetName(), e.catchs.GetName(), finalName, e.done.GetName(),
-		e.try.GetName(), "", finalName, e.done.GetName(),
+		e.Try.GetName(),
+		strings.Join(lo.Map(e.Catch, func(catch Value, _ int) string {
+			return catch.String()
+		}), ","),
+		finalName, e.Done.GetName(),
+	)
+}
+
+func (e *ErrorCatch) String() string {
+	return fmt.Sprintf(
+		"catch %s; body %s; exception %s",
+		e.GetName(), getStr(e.CatchBody), getStr(e.Exception),
 	)
 }
 

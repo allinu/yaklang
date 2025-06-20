@@ -5,15 +5,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/yaklang/yaklang/common/log"
-	"github.com/yaklang/yaklang/common/yak/antlr4yak/yakvm/vmstack"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-)
 
-import "github.com/tidwall/gjson"
+	"github.com/tidwall/gjson"
+	"github.com/yaklang/yaklang/common/log"
+	"github.com/yaklang/yaklang/common/yak/antlr4yak/yakvm/vmstack"
+)
 
 var (
 	reQuoted = regexp.MustCompile(`(?P<quoted>(\\x[0-9a-fA-F]{2}))`)
@@ -66,6 +66,12 @@ const (
 	//state_esExpr            = "es-expr"
 	state_reset = "reset"
 	state_quote = "quote"
+
+	// ex state
+	state_objectKey   = "object-key"
+	state_objectValue = "object-value"
+	state_jsonArray   = "json-array"
+	state_arrayItem   = `json-array-item`
 )
 
 func ExtractObjectIndexes(c string) [][2]int {
@@ -75,6 +81,8 @@ func ExtractObjectIndexes(c string) [][2]int {
 	var index = -1
 	var objectDepth = 0
 	var objectDepthIndexTable = make(map[int]int)
+	var arrayDepth = 0
+	var arrayDepthIndexTable = make(map[int]int)
 
 	var results [][2]int
 	stack := vmstack.New()
@@ -83,6 +91,11 @@ func ExtractObjectIndexes(c string) [][2]int {
 			objectDepth++
 			if _, existed := objectDepthIndexTable[objectDepth]; !existed {
 				objectDepthIndexTable[objectDepth] = index
+			}
+		} else if i == state_jsonArray {
+			arrayDepth++
+			if _, existed := arrayDepthIndexTable[arrayDepth]; !existed {
+				arrayDepthIndexTable[arrayDepth] = index
 			}
 		}
 		stack.Push(i)
@@ -102,6 +115,17 @@ func ExtractObjectIndexes(c string) [][2]int {
 					objectDepthIndexTable = make(map[int]int)
 				}
 				objectDepth--
+			} else if ok && raw == state_jsonArray {
+				// 记录数组结果
+				ret, ok := arrayDepthIndexTable[arrayDepth]
+				if ok && ret >= 0 {
+					results = append(results, [2]int{arrayDepthIndexTable[arrayDepth], index + 1})
+				}
+				delete(arrayDepthIndexTable, arrayDepth)
+				if arrayDepth == 0 {
+					arrayDepthIndexTable = make(map[int]int)
+				}
+				arrayDepth--
 			}
 		}
 	}
@@ -142,6 +166,9 @@ func ExtractObjectIndexes(c string) [][2]int {
 				//case '`':
 				//	pushState(state_esExpr)
 				//	continue
+			case '[':
+				pushState(state_jsonArray)
+				continue
 			}
 		case state_jsonObj:
 			switch ch {
@@ -157,7 +184,28 @@ func ExtractObjectIndexes(c string) [][2]int {
 			//case '`':
 			//	pushState(state_esExpr)
 			//	continue
+			case '[':
+				pushState(state_jsonArray)
+				continue
 			case '}':
+				popState()
+				continue
+			}
+		case state_jsonArray:
+			switch ch {
+			case '{':
+				pushState(state_jsonObj)
+				continue
+			case '"':
+				pushState(state_DoubleQuoteString)
+				continue
+			case '\'':
+				pushState(state_SingleQuoteString)
+				continue
+			case '[':
+				pushState(state_jsonArray)
+				continue
+			case ']':
 				popState()
 				continue
 			}
@@ -285,7 +333,71 @@ func ExtractJSONWithRaw(raw string) (results []string, rawStr []string) {
 	return
 }
 
+// ExtractJSON 尝试提取字符串中的 JSON 并进行修复, 返回中的元素都是原始 Json
+// Example:
+// ```
+// json.ExtractJson("hello yak") // []
+// res = json.ExtractJson(`[{"hello": "yak"}]`) // [[{"key": "value"}]]
+// assert(res[0]==`[{"key": "value"}]`)
+// ```
 func ExtractStandardJSON(raw string) []string {
 	jsonStr, _ := ExtractJSONWithRaw(raw)
 	return jsonStr
+}
+
+// ExtractObjectsOnly 从输入中提取所有对象, 为了保持兼容性
+// 不管输入是对象、数组还是混合文本，最终只返回对象
+func ExtractObjectsOnly(raw string) []string {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Errorf("extract objects only failed: %s", err)
+		}
+	}()
+
+	var results []string
+
+	// 首先提取所有的 JSON 结构
+	for _, obj := range ExtractObjectIndexes(raw) {
+		jsonStr := raw[obj[0]:obj[1]]
+
+		// 尝试解析为 JSON
+		var jsonBytes []byte
+		var valid bool
+
+		if json.Valid([]byte(jsonStr)) {
+			jsonBytes = []byte(jsonStr)
+			valid = true
+		} else {
+			// 尝试修复 JSON
+			if ret, ok := JsonValidObject([]byte(jsonStr)); ok {
+				jsonBytes = ret
+				valid = true
+			}
+		}
+
+		if !valid {
+			continue
+		}
+
+		// 使用 gjson 解析
+		result := gjson.ParseBytes(jsonBytes)
+
+		// 如果是对象，直接添加
+		if result.IsObject() {
+			results = append(results, result.Raw)
+		} else if result.IsArray() {
+			// 如果是数组，提取其中的对象
+			result.ForEach(func(key, value gjson.Result) bool {
+				if value.IsObject() {
+					// 将对象转换为字符串
+					objStr := value.Raw
+					results = append(results, objStr)
+				}
+				return true // 继续遍历
+			})
+		}
+		// 忽略其他类型（字符串、数字、布尔值等）
+	}
+
+	return results
 }

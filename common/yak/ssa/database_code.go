@@ -1,7 +1,6 @@
 package ssa
 
 import (
-	"github.com/yaklang/yaklang/common/log"
 	"github.com/yaklang/yaklang/common/utils"
 	"github.com/yaklang/yaklang/common/utils/memedit"
 	"github.com/yaklang/yaklang/common/yak/ssa/ssadb"
@@ -210,6 +209,12 @@ func value2IrCode(inst Instruction, ir *ssadb.IrCode) {
 	}
 	if point := value.GetReference(); point != nil {
 		ir.Point = point.GetId()
+	}
+
+	if inst.GetOpcode() == SSAOpcodeConstInst {
+		if constInst, ok := ToConst(inst); ok {
+			ir.ConstType = string(constInst.ConstType)
+		}
 	}
 
 	ir.TypeID = SaveTypeToDB(value.GetType(), inst.GetProgramName())

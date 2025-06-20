@@ -2,7 +2,6 @@ package ssa
 
 import (
 	"github.com/samber/lo"
-	"github.com/yaklang/yaklang/common/log"
 	"github.com/yaklang/yaklang/common/utils"
 )
 
@@ -113,7 +112,7 @@ func (c *Blueprint) Apply(obj Value) Type {
 	for rawKey, member := range c.NormalMember {
 		typ := member.GetType()
 		value := member
-		key := builder.EmitConstInst(rawKey)
+		key := builder.EmitConstInstPlaceholder(rawKey)
 		log.Infof("apply key: %s, member: %v", key, member)
 
 		objTyp.AddField(key, typ)

@@ -600,6 +600,11 @@ func HTTPWithoutRedirect(opts ...LowhttpOpt) (*LowhttpResponse, error) {
 	if option.OverrideEnableSystemProxyFromEnv {
 		dialopts = append(dialopts, netx.DialX_WithEnableSystemProxyFromEnv(option.EnableSystemProxyFromEnv))
 	}
+
+	if len(option.ExtendDialOption) > 0 {
+		dialopts = append(dialopts, option.ExtendDialOption...)
+	}
+
 	cacheKey := &connectKey{
 		proxy:           proxy,
 		scheme:          reqSchema,
@@ -714,6 +719,11 @@ RECONNECT:
 					goto RECONNECT
 				}
 			}
+			serverStart := time.Now()
+			h2Stream.SetReadFirstFrameCallback(func() {
+				traceInfo.ServerTime = time.Now().Sub(serverStart)
+			})
+
 			resp, responsePacket, err := h2Stream.waitResponse(timeout)
 			_ = resp
 			if err != nil {

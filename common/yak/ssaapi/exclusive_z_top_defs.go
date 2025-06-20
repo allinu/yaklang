@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/samber/lo"
-	"github.com/yaklang/yaklang/common/log"
 	"github.com/yaklang/yaklang/common/utils"
 	"github.com/yaklang/yaklang/common/yak/ssa"
 	"github.com/yaklang/yaklang/common/yak/yaklib/codec"
@@ -300,6 +299,9 @@ func (i *Value) getTopDefs(actx *AnalyzeContext, opt ...OperationOption) (result
 			case ssa.ParameterMemberCall:
 				if para := fun.GetParameter(inst.MemberCallObjectIndex); para != nil {
 					actx.pushObject(para, i.NewValue(inst.MemberCallKey), i.NewValue(ssa.NewConst("")))
+					// if i.GetTypeKind() == ssa.FunctionTypeKind {
+					// 	return append(para.AppendEffectOn(fun).getTopDefs(actx, opt...), i)
+					// }
 					return para.AppendEffectOn(fun).getTopDefs(actx, opt...)
 				}
 			case ssa.FreeValueMemberCall:
@@ -369,7 +371,7 @@ func (i *Value) getTopDefs(actx *AnalyzeContext, opt ...OperationOption) (result
 			}
 			calledInstance, ok := ssa.ToCall(called.innerValue)
 			if !ok {
-				log.Infof("BUG: Parameter getCalledByValue called is not callInstruction %s", called.GetOpcode())
+				log.Debugf("BUG: Parameter getCalledByValue called is not callInstruction %s", called.GetOpcode())
 				return Values{}
 			}
 			var actualParam ssa.Value
@@ -386,7 +388,7 @@ func (i *Value) getTopDefs(actx *AnalyzeContext, opt ...OperationOption) (result
 			} else {
 				// parameter
 				if inst.FormalParameterIndex >= len(calledInstance.Args) {
-					log.Infof("formal parameter index: %d is out of range", inst.FormalParameterIndex)
+					log.Debugf("formal parameter index: %d is out of range", inst.FormalParameterIndex)
 					return getMemberCall(i, i.innerValue, actx)
 				}
 				actualParam = calledInstance.Args[inst.FormalParameterIndex]

@@ -635,12 +635,7 @@ func (y *builder) VisitStaticClassExprVariableMember(raw phpparser.IStaticClassE
 	if i == nil {
 		return nil, "'"
 	}
-
-	value := y.VisitRightValue(i.FlexiVariable())
-	key := value.GetName()
-	if key == "" {
-		key = value.String()
-	}
+	key := yakunquote.TryUnquote(i.Variable().GetText())
 	bluePrint := y.VisitStaticClass(i.StaticClass())
 	if strings.HasPrefix(key, "$") {
 		key = key[1:]
@@ -680,6 +675,7 @@ func (y *builder) VisitStaticClassExpr(raw phpparser.IStaticClassExprContext) ss
 				if member := bluePrint.GetStaticMember(key); !utils.IsNil(member) {
 					return member
 				}
+				return y.ReadMemberCallValue(bluePrint.Container(), y.EmitConstInst(key))
 			}
 		}
 		return y.EmitUndefined(raw.GetText())
@@ -775,16 +771,16 @@ func (y *builder) VisitMemberCallKey(raw phpparser.IMemberCallKeyContext) ssa.Va
 
 	_ = i
 	if i.Identifier() != nil {
-		return y.EmitConstInst(y.VisitIdentifier(i.Identifier()))
+		return y.EmitConstInstPlaceholder(y.VisitIdentifier(i.Identifier()))
 	}
 
 	if i.Variable() != nil {
 		name := y.VisitVariable(i.Variable())
 		value := y.ReadValue(name)
 		if value.IsUndefined() {
-			return y.EmitConstInst(strings.TrimPrefix(value.GetName(), "$"))
+			return y.EmitConstInstPlaceholder(strings.TrimPrefix(value.GetName(), "$"))
 		} else {
-			return y.EmitConstInst(value.String())
+			return y.EmitConstInstPlaceholder(value.String())
 		}
 	}
 
@@ -818,7 +814,7 @@ func (y *builder) VisitFullyQualifiedNamespaceExpr(raw phpparser.IFullyQualified
 	} else {
 		bluePrint := y.GetBluePrint(i.GetText())
 		if bluePrint != nil {
-			inst := y.EmitConstInst(bluePrint.Name)
+			inst := y.EmitConstInstPlaceholder(bluePrint.Name)
 			inst.SetType(bluePrint)
 			return inst
 		}

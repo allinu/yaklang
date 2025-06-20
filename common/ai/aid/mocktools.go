@@ -80,7 +80,7 @@ func WeatherTool() *aitool.Tool {
 	// 创建天气工具
 	tool, _ := aitool.New("WeatherAPI",
 		aitool.WithDescription("天气查询工具 - 根据城市和日期查询天气情况"),
-		aitool.WithCallback(callback),
+		aitool.WithSimpleCallback(callback),
 		aitool.WithStringParam("city",
 			aitool.WithParam_Description("城市名称"),
 			aitool.WithParam_Required(),
@@ -188,7 +188,7 @@ func AttractionTool() *aitool.Tool {
 	// 创建景点工具
 	tool, _ := aitool.New("AttractionAPI",
 		aitool.WithDescription("景点推荐工具 - 根据城市和偏好类型推荐景点"),
-		aitool.WithCallback(callback),
+		aitool.WithSimpleCallback(callback),
 		aitool.WithStringParam("city",
 			aitool.WithParam_Description("城市名称"),
 			aitool.WithParam_Required(),
@@ -305,7 +305,7 @@ func RestaurantTool() *aitool.Tool {
 	// 创建餐厅工具
 	tool, _ := aitool.New("RestaurantAPI",
 		aitool.WithDescription("餐厅搜索工具 - 根据位置、预算和菜系搜索餐厅"),
-		aitool.WithCallback(callback),
+		aitool.WithSimpleCallback(callback),
 		aitool.WithStringParam("location",
 			aitool.WithParam_Description("位置坐标或区域名称"),
 			aitool.WithParam_Required(),
@@ -374,7 +374,7 @@ func TransportTool() *aitool.Tool {
 	// 创建交通工具
 	tool, _ := aitool.New("TransportAPI",
 		aitool.WithDescription("交通查询工具 - 查询两地之间的交通方式"),
-		aitool.WithCallback(callback),
+		aitool.WithSimpleCallback(callback),
 		aitool.WithStringParam("origin",
 			aitool.WithParam_Description("起点位置"),
 			aitool.WithParam_Required(),
@@ -501,7 +501,7 @@ func TimeEstimateTool() *aitool.Tool {
 	// 创建时间估算工具
 	tool, _ := aitool.New("TimeEstimateAPI",
 		aitool.WithDescription("行程时间估算工具 - 估算多地点行程所需时间"),
-		aitool.WithCallback(callback),
+		aitool.WithSimpleCallback(callback),
 		aitool.WithStringArrayParamEx("locations",
 			[]aitool.PropertyOption{
 				aitool.WithParam_Description("地点列表"),
@@ -517,6 +517,57 @@ func TimeEstimateTool() *aitool.Tool {
 			},
 			aitool.WithParam_Description("停留时间"),
 			aitool.WithParam_Required(),
+		),
+	)
+
+	return tool
+}
+
+// PrintTool 直接输出工具
+func PrintTool() *aitool.Tool {
+	callback := func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (interface{}, error) {
+		output := params.GetString("output")
+		errString := params.GetString("err")
+		if output != "" {
+			stdout.Write([]byte(output))
+		}
+
+		if errString != "" {
+			stderr.Write([]byte(errString))
+		}
+
+		return nil, nil
+	}
+
+	// 创建交通工具
+	tool, _ := aitool.New("print",
+		aitool.WithDescription("输出测试工具"),
+		aitool.WithSimpleCallback(callback),
+		aitool.WithStringParam("output",
+			aitool.WithParam_Description("输出"),
+		),
+		aitool.WithStringParam("err",
+			aitool.WithParam_Description("错误输出"),
+		),
+	)
+
+	return tool
+}
+
+// TimeDelayedTool 模拟延时工具
+func TimeDelayTool() *aitool.Tool {
+	callback := func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (interface{}, error) {
+		delay := params.GetInt("delay")
+		time.Sleep(time.Duration(delay) * time.Second)
+		return nil, nil
+	}
+
+	// 创建交通工具
+	tool, _ := aitool.New("delay",
+		aitool.WithDescription("延时测试工具"),
+		aitool.WithSimpleCallback(callback),
+		aitool.WithIntegerParam("delay",
+			aitool.WithParam_Description("延时时间（秒）"),
 		),
 	)
 

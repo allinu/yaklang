@@ -9,7 +9,6 @@ import (
 
 	"github.com/samber/lo"
 	"github.com/yaklang/yaklang/common/consts"
-	"github.com/yaklang/yaklang/common/log"
 	"github.com/yaklang/yaklang/common/schema"
 	"github.com/yaklang/yaklang/common/yak/ssa/ssadb"
 	"github.com/yaklang/yaklang/common/yakgrpc/yakit"
@@ -92,6 +91,7 @@ func buildSSARisk(
 		Title:         rule.Title,
 		TitleVerbose:  rule.TitleZh,
 		Description:   rule.Description,
+		Solution:      rule.Solution,
 		RiskType:      rule.RiskType,
 		Severity:      rule.Severity,
 		CVE:           rule.CVE,

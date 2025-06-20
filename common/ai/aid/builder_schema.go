@@ -7,22 +7,37 @@ import (
 	"text/template"
 )
 
-//go:embed jsonschema/task.json
-var taskJsonSchema string
+//go:embed jsonschema/plan/plan.json
+var planJsonSchema string
 
-//go:embed jsonschema/re-plan.json
+//go:embed jsonschema/plan/plan-or-interact.json
+var planWithUserInteractJsonSchema string
+
+//go:embed jsonschema/plan/re-plan.json
 var rePlanSchema string
 
-//go:embed jsonschema/task-summary.json
+//go:embed jsonschema/task/task-summary.json
 var taskSummarySchema string
 
-//go:embed jsonschema/tool-desc-require.json
+//go:embed jsonschema/tool/tool-desc-require.json
 var toolDescRequireSchema string
 
-//go:embed jsonschema/tool-execute-check.json
+//go:embed jsonschema/task/task-direct-answer.json
+var directAnswerSchema string
+
+//go:embed jsonschema/tool/tool-execute-check.json
 var toolExecuteCheckSchema string
 
-func taskJSONSchema(toolNames []string) map[string]string {
+//go:embed jsonschema/tool/tool-execute-check-without-continue.json
+var toolExecuteCheckSchemaWithoutContinue string
+
+//go:embed jsonschema/plan-review/create-subtask.json
+var planReviewCreateSubtasksSchema string
+
+//go:embed jsonschema/search/keyword_search.json
+var keywordSearchSchema string
+
+func planJSONSchema(toolNames []string) map[string]string {
 	var toolNamesStrs []string
 	for _, toolName := range toolNames {
 		toolNamesStrs = append(toolNamesStrs, fmt.Sprintf("\"%s\"", toolName))
@@ -33,10 +48,15 @@ func taskJSONSchema(toolNames []string) map[string]string {
 		"ToolsList": strings.Join(toolNamesStrs, ", "),
 	})
 	res := make(map[string]string)
-	res["TaskJsonSchema"] = taskJsonSchema
+	res["PlanJsonSchema"] = planJsonSchema
+	res["PlanWithUserInteractJsonSchema"] = planWithUserInteractJsonSchema
 	res["RePlanJsonSchema"] = rePlanSchema
 	res["TaskSummarySchema"] = taskSummarySchema
 	res["ToolDescRequireSchema"] = toolDescRequireSchemaBuilder.String()
 	res["ToolExecuteCheckSchema"] = toolExecuteCheckSchema
+	res["ToolExecuteCheckSchemaWithoutContinue"] = toolExecuteCheckSchemaWithoutContinue
+	res["PlanCreateSubtaskSchema"] = planReviewCreateSubtasksSchema
+	res["KeywordSearchSchema"] = keywordSearchSchema
+	res["DirectAnswerSchema"] = directAnswerSchema
 	return res
 }

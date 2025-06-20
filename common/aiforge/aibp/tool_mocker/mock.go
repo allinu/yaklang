@@ -76,6 +76,16 @@ type SubTaskInfo struct {
 	SubTaskGoal string `json:"subtask_goal"`
 }
 
+func NewMockerSearcher[T searchtools.AISearchable](getter func(ctx context.Context, query string) (T, error)) searchtools.AISearcher[T] {
+	return func(query string, searchList []T) ([]T, error) {
+		tool, err := getter(context.Background(), query)
+		if err != nil {
+			return nil, err
+		}
+		return []T{tool}, nil
+	}
+}
+
 func NewAiToolMockServer(aiOptions ...aispec.AIConfigOption) *AiToolMockServer {
 	mocker := &AiToolMockServer{
 		aiOptions: aiOptions,
@@ -89,7 +99,7 @@ func NewAiToolMockServer(aiOptions ...aispec.AIConfigOption) *AiToolMockServer {
 				aitool.WithParam_Required(true),
 				aitool.WithParam_Description("The name of the tool to query, can describe tool requirements using natural language."),
 			),
-			aitool.WithCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
+			aitool.WithSimpleCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
 				query := params.GetString("query")
 				suggestions, err := mocker.QueryToolSuggestion(context.Background(), query)
 				if err != nil {
@@ -99,13 +109,7 @@ func NewAiToolMockServer(aiOptions ...aispec.AIConfigOption) *AiToolMockServer {
 			}))
 		allTools = append(allTools, factory.Tools()...)
 		return allTools
-	}, buildinaitools.WithSearcher(func(req *searchtools.ToolSearchRequest) ([]*aitool.Tool, error) {
-		tool, err := mocker.SearchTool(context.Background(), req.Query)
-		if err != nil {
-			return nil, err
-		}
-		return []*aitool.Tool{tool}, nil
-	}), buildinaitools.WithToolEnabled("tools_search", true))
+	}, buildinaitools.WithSearcher(NewMockerSearcher(mocker.SearchTool)), buildinaitools.WithToolEnabled("tools_search", true))
 	return mocker
 }
 
@@ -191,7 +195,7 @@ func (s *AiToolMockServer) CallTool(tool *aitool.Tool, params aitool.InvokeParam
 }
 
 func (s *AiToolMockServer) SearchTool(ctx context.Context, name string) (*aitool.Tool, error) {
-	allTools, err := s.ToolManager.GetAllTools()
+	allTools, err := s.ToolManager.GetEnableTools()
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +248,7 @@ func (s *AiToolMockServer) SearchTool(ctx context.Context, name string) (*aitool
 		}
 	}
 	var mockTool *aitool.Tool
-	opts = append(opts, aitool.WithCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
+	opts = append(opts, aitool.WithSimpleCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
 		return s.CallTool(mockTool, params, stdout, stderr)
 	}))
 	factory.RegisterTool(mockDefinition.ToolName, opts...)

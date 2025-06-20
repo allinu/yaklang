@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/jinzhu/gorm"
-	"github.com/yaklang/yaklang/common/log"
 	"github.com/yaklang/yaklang/common/utils/bizhelper"
 )
 
@@ -53,7 +52,7 @@ func GetResultVariableByID(db *gorm.DB, resultID uint) ([]*ResultVariable, error
 	var items []*ResultVariable
 	db = db.Model(&AuditNode{}).
 		Where("result_id = ? and is_entry_node = ?", resultID, true).
-		Select("result_variable, risk_hash != '' as has_risk, count(ir_code_id) as num").
+		Select("result_variable, MAX(risk_hash != '') as has_risk, count(ir_code_id) as num").
 		Group("result_variable")
 	row, err := db.Rows()
 	if err != nil {

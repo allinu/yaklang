@@ -19,13 +19,16 @@ type runtime struct {
 }
 
 func (c *Coordinator) createRuntime() *runtime {
-	return &runtime{
+	r := &runtime{
 		config: c.config,
 		Stack:  utils.NewStack[*aiTask](),
 	}
+	c.config.aiTaskRuntime = r
+
+	return r
 }
 
-func (t *aiTask) dumpProgress(i int, w io.Writer) {
+func (t *aiTask) dumpProgressEx(i int, w io.Writer, details bool) {
 	prefix := strings.Repeat(" ", i)
 
 	executing := false
@@ -69,12 +72,26 @@ func (t *aiTask) dumpProgress(i int, w io.Writer) {
 		}
 	}
 
-	_, _ = fmt.Fprintf(w, "%s -[%v] %s %v\n", prefix, fill, strconv.Quote(t.Name), note)
-	if len(t.Subtasks) > 0 {
-		for _, subtask := range t.Subtasks {
-			subtask.dumpProgress(i+1, w)
+	taskNameShow := strconv.Quote(t.Name)
+	if details {
+		taskNameShow = taskNameShow + "(" + strconv.Quote(t.Goal) + ")"
+		if t.Index != "" {
+			taskNameShow = t.Index + ". " + taskNameShow
 		}
 	}
+	if strings.TrimSpace(note) == "" {
+		note = "(未开始)"
+	}
+	_, _ = fmt.Fprintf(w, "%s -[%v] %s %v\n", prefix, fill, taskNameShow, note)
+	if len(t.Subtasks) > 0 {
+		for _, subtask := range t.Subtasks {
+			subtask.dumpProgressEx(i+1, w, details)
+		}
+	}
+}
+
+func (t *aiTask) dumpProgress(i int, w io.Writer) {
+	t.dumpProgressEx(i, w, false)
 }
 
 func (t *aiTask) Progress() string {
@@ -83,6 +100,15 @@ func (t *aiTask) Progress() string {
 	}
 	var buf bytes.Buffer
 	t.dumpProgress(0, &buf)
+	return buf.String()
+}
+
+func (t *aiTask) ProgressWithDetail() string {
+	if t == nil {
+		return ""
+	}
+	var buf bytes.Buffer
+	t.dumpProgressEx(0, &buf, true)
 	return buf.String()
 }
 
@@ -121,28 +147,30 @@ func (r *runtime) invokeSubtask(idx int, task *aiTask) error {
 	}()
 
 	if len(task.Subtasks) > 0 {
-		// why not use for-range but use while-loop?
-		// because subsequent subtasks may be changed during the execution
-		currentID := -1
-		for {
-			currentID++
-			if currentID >= len(task.Subtasks) {
-				break
-			}
-			subtask := task.Subtasks[currentID]
-			err := r.invokeSubtask(idx+currentID+1, subtask)
-			if err != nil {
-				r.config.EmitError("invoke subtask failed: %v", err)
-				// invoke subtask failed
-				// retry via user!
-				return err
-			}
-			r.config.EmitInfo("invoke subtask success: %v with %d tool call results", subtask.Name, subtask.toolCallResultIds.Len())
-		}
-		return nil
+		return r.executeSubTask(idx, task)
 	}
 
 	return task.executeTask()
+}
+
+func (r *runtime) executeSubTask(idx int, task *aiTask) error {
+	currentID := -1
+	for {
+		currentID++
+		if currentID >= len(task.Subtasks) {
+			break
+		}
+		subtask := task.Subtasks[currentID]
+		err := r.invokeSubtask(idx+currentID+1, subtask)
+		if err != nil {
+			r.config.EmitError("invoke subtask failed: %v", err)
+			// invoke subtask failed
+			// retry via user!
+			return err
+		}
+		r.config.EmitInfo("invoke subtask success: %v with %d tool call results", subtask.Name, subtask.toolCallResultIds.Len())
+	}
+	return nil
 }
 
 func (r *runtime) Invoke(task *aiTask) {

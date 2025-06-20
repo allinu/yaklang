@@ -6,8 +6,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/yaklang/yaklang/common/log"
-
 	"github.com/samber/lo"
 	"github.com/yaklang/yaklang/common/utils"
 	"golang.org/x/exp/slices"
@@ -1522,7 +1520,10 @@ func (c *OrType) GetTypes() Types {
 	return c.types
 }
 
-func NewOrType(types ...Type) *OrType {
+func NewOrType(types ...Type) Type {
+	if len(types) == 1 {
+		return types[0]
+	}
 	return &OrType{
 		baseType: NewBaseType(),
 		types:    Types(types),

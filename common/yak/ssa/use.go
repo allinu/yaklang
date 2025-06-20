@@ -2,7 +2,6 @@ package ssa
 
 import (
 	"github.com/samber/lo"
-	"github.com/yaklang/yaklang/common/log"
 	"github.com/yaklang/yaklang/common/utils"
 	"golang.org/x/exp/slices"
 )
@@ -361,6 +360,21 @@ func (l *Loop) ReplaceValue(v Value, to Value) {
 func (r *Loop) HasUsers() bool  { return false }
 func (r *Loop) GetUsers() Users { return nil }
 
+// ----------- Jump
+func (l *Jump) HasValues() bool { return true }
+func (l *Jump) GetValues() Values {
+	return lo.Filter([]Value{l.To}, filterNilValue)
+}
+func (l *Jump) ReplaceValue(v Value, to Value) {
+	if l.To == v {
+		l.To = to
+	} else {
+		panic("jump not use this value")
+	}
+}
+func (r *Jump) HasUsers() bool  { return false }
+func (r *Jump) GetUsers() Users { return nil }
+
 // ----------- Switch
 func (sw *Switch) HasValues() bool { return true }
 func (sw *Switch) GetValues() Values {
@@ -390,3 +404,46 @@ func (sw *Switch) ReplaceValue(v Value, to Value) {
 
 func (r *Switch) HasUsers() bool  { return false }
 func (r *Switch) GetUsers() Users { return nil }
+
+// ----------- ErrorHandler
+func (e *ErrorHandler) HasValues() bool { return true }
+func (e *ErrorHandler) GetValues() Values {
+	var vs Values = e.Catch
+	vs = append(vs, e.Final, e.Done, e.Try)
+	return lo.Filter(vs, filterNilValue)
+}
+func (e *ErrorHandler) ReplaceValue(v Value, to Value) {
+	// Check in catches
+	for i, c := range e.Catch {
+		if c == v {
+			e.Catch[i] = to
+			return
+		}
+	}
+	// Check other fields
+	if e.Final == v {
+		e.Final = to.(*BasicBlock)
+	} else if e.Done == v {
+		e.Done = to.(*BasicBlock)
+	} else if e.Try == v {
+		e.Try = to.(*BasicBlock)
+	} else {
+		panic("error handler not use this value")
+	}
+}
+func (e *ErrorHandler) HasUsers() bool  { return false }
+func (e *ErrorHandler) GetUsers() Users { return nil }
+
+func (e *ErrorCatch) HasValues() bool   { return true }
+func (e *ErrorCatch) GetValues() Values { return []Value{e.CatchBody, e.Exception} }
+func (e *ErrorCatch) ReplaceValue(v Value, to Value) {
+	if e.CatchBody == v {
+		e.CatchBody = to
+	} else if e.Exception == v {
+		e.Exception = to
+	} else {
+		panic("error catch not use this value")
+	}
+}
+func (e *ErrorCatch) HasUsers() bool  { return false }
+func (e *ErrorCatch) GetUsers() Users { return nil }

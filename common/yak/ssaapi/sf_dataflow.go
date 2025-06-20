@@ -1,7 +1,6 @@
 package ssaapi
 
 import (
-	"github.com/yaklang/yaklang/common/log"
 	"github.com/yaklang/yaklang/common/syntaxflow/sfvm"
 	sf "github.com/yaklang/yaklang/common/syntaxflow/sfvm"
 	"github.com/yaklang/yaklang/common/utils"
@@ -85,6 +84,8 @@ func DataFlowWithSFConfig(
 			return nil
 		}))
 	}
+
+	options = append(options, WithExclusiveContext(config.GetContext()))
 	var dataflowRecursiveFunc func(options ...OperationOption) Values
 	if analysisType == TopDefAnalysis {
 		dataflowRecursiveFunc = value.GetTopDefs

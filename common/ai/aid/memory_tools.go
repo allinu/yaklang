@@ -17,7 +17,7 @@ func (m *Memory) CreateBasicMemoryTools() ([]*aitool.Tool, error) {
 			"id",
 			aitool.WithParam_Required(true),
 		),
-		aitool.WithCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
+		aitool.WithSimpleCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
 			id := params.GetInt("id")
 			m.SoftDeleteTimeline(id)
 			return nil, nil
@@ -30,9 +30,9 @@ func (m *Memory) CreateBasicMemoryTools() ([]*aitool.Tool, error) {
 		aitool.WithDangerousNoNeedTimelineRecorded(true),
 		aitool.WithStringParam("content",
 			aitool.WithParam_Required(true)),
-		aitool.WithCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
+		aitool.WithSimpleCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
 			content := params.GetString("content")
-			m.StoreAppendPersistentInfo(content)
+			m.PushPersistentData(content)
 			return nil, nil
 		}))
 	if err != nil {
@@ -48,7 +48,7 @@ func (m *Memory) CreateMemoryTools() ([]*aitool.Tool, error) {
 
 	err = factory.RegisterTool("memory_query",
 		aitool.WithDescription("get ai task user first query content"),
-		aitool.WithCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
+		aitool.WithSimpleCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
 			return m.Query, nil
 		}))
 	if err != nil {
@@ -56,7 +56,7 @@ func (m *Memory) CreateMemoryTools() ([]*aitool.Tool, error) {
 	}
 	err = factory.RegisterTool("memory_progress",
 		aitool.WithDescription("get ai task progress"),
-		aitool.WithCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
+		aitool.WithSimpleCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
 			return m.CurrentTask.Progress(), nil
 		}))
 	if err != nil {
@@ -66,7 +66,7 @@ func (m *Memory) CreateMemoryTools() ([]*aitool.Tool, error) {
 	err = factory.RegisterTool("memory_tool_call_results",
 		aitool.WithDescription("get ai task tool call results"),
 		aitool.WithIntegerParam("lastN", aitool.WithParam_Description("last n tool call results"), aitool.WithParam_Default(20)),
-		aitool.WithCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
+		aitool.WithSimpleCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
 			lastN := params.GetInt("lastN")
 			return m.PromptForToolCallResultsForLastN(int(lastN)), nil
 		}))
@@ -75,51 +75,50 @@ func (m *Memory) CreateMemoryTools() ([]*aitool.Tool, error) {
 	}
 
 	// user data api, user or ai can write and read
-	err = factory.RegisterTool("memory_user_data_set",
+	err = factory.RegisterTool("memory_persistent_data_set",
 		aitool.WithDescription("memory tools: set user data to memory;user data  as the AI's external long-term memory, allowing the AI to read from and write to this data storage to maintain continuity across different contexts. "),
 		aitool.WithStringParam("key", aitool.WithParam_Required(true), aitool.WithParam_Description("user data key")),
 		aitool.WithStringParam("value", aitool.WithParam_Required(true), aitool.WithParam_Description("user data value")),
-		aitool.WithCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
+		aitool.WithSimpleCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
 			key := params.GetString("key")
 			value := params.GetString("value")
-			m.StoreUserData(key, value)
+			m.SetPersistentData(key, value)
 			return nil, nil
 		}))
 	if err != nil {
-		log.Errorf("register memory_user_data_set tool: %v", err)
+		log.Errorf("register memory_persistent_data_set tool: %v", err)
 	}
 
-	err = factory.RegisterTool("memory_user_data_get",
+	err = factory.RegisterTool("memory_persistent_data_get",
 		aitool.WithDescription("memory tools: get user data in memory; user data  as the AI's external long-term memory, allowing the AI to read from and write to this data storage to maintain continuity across different contexts"),
 		aitool.WithStringParam("key", aitool.WithParam_Required(true), aitool.WithParam_Description("user data key")),
-		aitool.WithCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
+		aitool.WithSimpleCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
 			key := params.GetString("key")
-			value, ok := m.UserDataGet(key)
+			value, ok := m.GetPersistentData(key)
 			if !ok {
 				return nil, utils.Error("get memory user data fail: key not found")
 			}
 			return value, nil
 		}))
 	if err != nil {
-		log.Errorf("register memory_user_data_get tool: %v", err)
+		log.Errorf("register memory_persistent_data_get tool: %v", err)
 	}
 
-	err = factory.RegisterTool("memory_user_data_delete",
+	err = factory.RegisterTool("memory_persistent_data_delete",
 		aitool.WithDescription("memory tools: delete user data from memory; user data  as the AI's external long-term memory, allowing the AI to read from and write to this data storage to maintain continuity across different contexts"),
 		aitool.WithStringParam("key", aitool.WithParam_Required(true), aitool.WithParam_Description("user data key")),
-		aitool.WithCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
+		aitool.WithSimpleCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
 			key := params.GetString("key")
-			m.UserDataDelete(key)
+			m.DeletePersistentData(key)
 			return nil, nil
 		}))
 	if err != nil {
-		log.Errorf("register memory_user_data_delete tool: %v", err)
+		log.Errorf("register memory_persistent_data_delete tool: %v", err)
 	}
-
-	err = factory.RegisterTool("memory_user_data_list",
+	err = factory.RegisterTool("memory_persistent_data_list",
 		aitool.WithDescription("memory tools: list user data key in memory; user data  as the AI's external long-term memory, allowing the AI to read from and write to this data storage to maintain continuity across different contexts"),
-		aitool.WithCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
-			return m.UserDataKeys(), nil
+		aitool.WithSimpleCallback(func(params aitool.InvokeParams, stdout io.Writer, stderr io.Writer) (any, error) {
+			return m.PersistentData.Keys(), nil
 		}))
 	if err != nil {
 		log.Errorf("register memory_user_data_list tool: %v", err)

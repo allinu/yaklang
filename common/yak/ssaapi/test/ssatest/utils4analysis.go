@@ -3,6 +3,7 @@ package ssatest
 import (
 	"errors"
 	"fmt"
+	"github.com/yaklang/yaklang/common/log"
 	"io/fs"
 	"sort"
 	"strings"
@@ -26,7 +27,6 @@ import (
 	"github.com/yaklang/yaklang/common/yak/ssaapi"
 
 	"github.com/samber/lo"
-	"github.com/yaklang/yaklang/common/log"
 	fi "github.com/yaklang/yaklang/common/utils/filesys/filesys_interface"
 )
 
@@ -42,6 +42,7 @@ const (
 
 func CheckWithFS(fs fi.FileSystem, t require.TestingT, handler func(ssaapi.Programs) error, opt ...ssaapi.Option) {
 	// only in memory
+	opt = append(opt, ssaapi.WithLogLevel("debug"))
 	{
 		prog, err := ssaapi.ParseProjectWithFS(fs, opt...)
 		require.Nil(t, err)
@@ -88,6 +89,7 @@ func CheckWithName(
 	opt ...ssaapi.Option,
 ) {
 	// only in memory
+	opt = append(opt, ssaapi.WithLogLevel("debug"))
 	{
 		prog, err := ssaapi.Parse(code, opt...)
 		require.Nil(t, err)
@@ -137,6 +139,7 @@ func CheckWithNameOnlyInMemory(
 	handler func(prog *ssaapi.Program) error,
 	opt ...ssaapi.Option,
 ) {
+	opt = append(opt, ssaapi.WithLogLevel("debug"))
 	// only in memory
 	{
 		prog, err := ssaapi.Parse(code, opt...)
@@ -220,6 +223,7 @@ func ProfileJavaCheck(t *testing.T, code string, handler func(inMemory bool, pro
 }
 
 func CheckProfileWithFS(fs fi.FileSystem, t require.TestingT, handler func(p ParseStage, prog ssaapi.Programs, start time.Time) error, opt ...ssaapi.Option) {
+	opt = append(opt, ssaapi.WithLogLevel("debug"))
 	// only in memory
 	{
 		start := time.Now()
@@ -266,6 +270,7 @@ func CheckFSWithProgram(
 	t *testing.T, programName string,
 	codeFS, ruleFS fi.FileSystem, opt ...ssaapi.Option,
 ) {
+	opt = append(opt, ssaapi.WithLogLevel("debug"))
 	if programName == "" {
 		programName = "test-" + uuid.New().String()
 	}
@@ -545,7 +550,7 @@ func checkResult(verifyFs *sfvm.VerifyFileSystem, rule *schema.SyntaxFlowRule, r
 			errs = utils.Wrapf(errs, "checkResult failed in file: %s", builder.String())
 		}
 	}()
-	result.Show()
+	result.Show(sfvm.WithShowAll())
 	if len(result.GetErrors()) > 0 {
 		for _, e := range result.GetErrors() {
 			errs = utils.JoinErrors(errs, utils.Errorf("syntax flow failed: %v", e))
@@ -724,9 +729,11 @@ func EvaluateVerifyFilesystem(i string, t require.TestingT) error {
 		CheckWithFS(f.GetVirtualFs(), t, func(programs ssaapi.Programs) error {
 			result, err := programs.SyntaxFlowWithError(i, ssaapi.QueryWithEnableDebug(false), ssaapi.QueryWithInitInputVar(programs[0]))
 			if err != nil {
+				log.Errorf("syntax flow content failed: %v", err)
 				errs = utils.JoinErrors(errs, err)
 				return err
 			}
+			result.Show()
 			if err := checkResult(f, frame.GetRule(), result); err != nil {
 				errs = utils.JoinErrors(errs, err)
 			}
@@ -744,10 +751,12 @@ func EvaluateVerifyFilesystem(i string, t require.TestingT) error {
 				result, err := programs.SyntaxFlowWithError(i, ssaapi.QueryWithEnableDebug(false), ssaapi.QueryWithInitInputVar(programs[0]))
 				if err != nil {
 					if errors.Is(err, sfvm.CriticalError) {
+						log.Errorf("syntax flow content failed: %v", err)
 						errs = utils.JoinErrors(errs, err)
 						return err
 					}
 				}
+				result.Show()
 				if result != nil {
 					if len(result.GetErrors()) > 0 {
 						return nil

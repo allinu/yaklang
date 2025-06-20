@@ -55,11 +55,13 @@ var ProfileTables = []interface{}{
 	&CodecFlow{},
 	//general rule
 	&GeneralRule{},
+	&GeneralRuleGroup{},
 	//syntaxFlow rule
 	&SyntaxFlowRule{},
 	&SyntaxFlowGroup{},
 	&PluginEnv{},
 	&HotPatchTemplate{},
+	&AIForge{},
 
 	&AiProvider{},   // for aibalance
 	&AiApiKeys{},    // for aibalance

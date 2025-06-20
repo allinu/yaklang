@@ -3,15 +3,13 @@ package coreplugin
 import (
 	"strings"
 
-	"github.com/yaklang/yaklang/common/schema"
-	"github.com/yaklang/yaklang/common/yak/static_analyzer"
-	"github.com/yaklang/yaklang/common/yak/static_analyzer/information"
-	"github.com/yaklang/yaklang/common/yakgrpc"
-
 	uuid "github.com/google/uuid"
 	"github.com/yaklang/yaklang/common/consts"
 	"github.com/yaklang/yaklang/common/log"
+	"github.com/yaklang/yaklang/common/schema"
 	"github.com/yaklang/yaklang/common/utils"
+	"github.com/yaklang/yaklang/common/yak/static_analyzer"
+	"github.com/yaklang/yaklang/common/yak/static_analyzer/information"
 	"github.com/yaklang/yaklang/common/yakgrpc/yakit"
 )
 
@@ -282,6 +280,13 @@ func init() {
 			withPluginEnableGenerateParam(true),
 		)
 		registerBuildInPlugin(
+			"yak",
+			"SyntaxFlow 查询项目信息",
+			withPluginHelp("使用SyntaxFlow查询项目信息，如项目的过滤函数。"),
+			withPluginAuthors("intSheep"),
+			withPluginEnableGenerateParam(true),
+		)
+		registerBuildInPlugin(
 			"mitm",
 			"SQL注入-Path参数注入",
 			withPluginAuthors("intSheep"),
@@ -316,7 +321,7 @@ func OverWriteYakPlugin(name string, scriptData *schema.YakScript, enableGenerat
 			if err != nil {
 				return "", "", err
 			}
-			params, envKey, err := yakgrpc.GenerateParameterFromProgram(prog)
+			params, envKey, err := information.GenerateParameterFromProgram(prog)
 			if err != nil {
 				return "", "", utils.Wrapf(err, "generate param for %s failed", name)
 			}

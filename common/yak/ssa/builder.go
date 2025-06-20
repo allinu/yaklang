@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"github.com/yaklang/yaklang/common/yak/ssa/ssadb"
+	"github.com/yaklang/yaklang/common/yak/ssa/ssalog"
 	"reflect"
 	"sort"
 	"strings"
-
 
 	"github.com/samber/lo"
 
@@ -17,9 +17,9 @@ import (
 	"github.com/yaklang/yaklang/common/utils"
 
 	"github.com/yaklang/yaklang/common/utils/memedit"
-
-	"github.com/yaklang/yaklang/common/log"
 )
+
+var log = ssalog.Log
 
 type ParentScope struct {
 	scope ScopeIF
@@ -285,15 +285,23 @@ func (b *FunctionBuilder) ReferenceParameter(name string, index int) {
 	b.RefParameter[name] = struct{ Index int }{Index: index}
 }
 func (b *FunctionBuilder) ClassConstructor(bluePrint *Blueprint, args []Value) Value {
-	method := bluePrint.GetMagicMethod(Constructor)
+	method := bluePrint.GetMagicMethod(Constructor, b)
 	constructor := b.NewCall(method, args)
 	b.EmitCall(constructor)
 	constructor.SetType(bluePrint)
-	destructor := bluePrint.GetMagicMethod(Destructor)
+	destructor := bluePrint.GetMagicMethod(Destructor, b)
 	call := b.NewCall(destructor, []Value{constructor})
 	b.EmitDefer(call)
 	return constructor
 }
+
+func (b *FunctionBuilder) ClassConstructorWithoutDeferDestructor(bluePrint *Blueprint, args []Value) Value {
+	method := bluePrint.GetMagicMethod(Constructor, b)
+	constructor := b.NewCall(method, args)
+	b.EmitCall(constructor)
+	return constructor
+}
+
 func (b *FunctionBuilder) GetStaticMember(classname *Blueprint, field string) *Variable {
 	return b.CreateVariable(fmt.Sprintf("%s_%s", classname.Name, strings.TrimPrefix(field, "$")))
 }
@@ -377,7 +385,7 @@ func (b *FunctionBuilder) GenerateDependence(pkgs []*dxtypes.Package, filename s
 			"version":  pkg.Version,
 			"filename": filename,
 		} {
-			constInst := b.EmitConstInst(v)
+			constInst := b.EmitConstInstPlaceholder(v)
 			if rng != nil {
 				constInst.SetRange(rng)
 			}
@@ -422,11 +430,11 @@ func (b *FunctionBuilder) GenerateProjectConfig() {
 			} else {
 				b.SetEmptyRange()
 			}
-			variable := b.CreateMemberCallVariable(config, b.EmitConstInst(k))
-			b.AssignVariable(variable, b.EmitConstInst(cv))
+			variable := b.CreateMemberCallVariable(config, b.EmitConstInstPlaceholder(k))
+			b.AssignVariable(variable, b.EmitConstInstPlaceholder(cv))
 
 			val := b.CreateVariable("test")
-			b.AssignVariable(val, b.EmitConstInst(cv))
+			b.AssignVariable(val, b.EmitConstInstPlaceholder(cv))
 		}
 	}
 	return

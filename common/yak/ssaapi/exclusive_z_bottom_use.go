@@ -1,7 +1,6 @@
 package ssaapi
 
 import (
-	"github.com/yaklang/yaklang/common/log"
 	"github.com/yaklang/yaklang/common/utils"
 	"github.com/yaklang/yaklang/common/yak/ssa"
 )
@@ -23,7 +22,6 @@ func (v Values) GetBottomUses(opts ...OperationOption) Values {
 
 func (v *Value) visitUserFallback(actx *AnalyzeContext, opt ...OperationOption) Values {
 	var vals Values
-
 	if v.IsObject() {
 		exist := false
 		actx.foreachObjectStack(func(obj *Value, key *Value, val *Value) bool {
@@ -77,6 +75,7 @@ func (v *Value) getBottomUses(actx *AnalyzeContext, opt ...OperationOption) (res
 			}
 		}
 	}()
+
 	if v == nil {
 		return nil
 	}
@@ -113,13 +112,13 @@ func (v *Value) getBottomUses(actx *AnalyzeContext, opt ...OperationOption) (res
 	case *ssa.Call:
 		method := inst.Method
 		if method == nil {
-			log.Infof("fallback: (call instruction 's method/func is not *Function) unknown caller, got: %v", inst.Method.String())
+			log.Debugf("fallback: (call instruction 's method/func is not *Function) unknown caller, got: %v", inst.Method.String())
 			return v.visitUserFallback(actx, opt...)
 		}
 		actx.pushCall(inst)
 		//分析的当前值相同，说明进来就是当前值
 		if ValueCompare(v, actx.Self) {
-			log.Infof("value analysis: (call instruction) caller is self")
+			log.Debugf("value analysis: (call instruction) caller is self")
 			return v.visitUserFallback(actx, opt...)
 		}
 		existed := map[int64]struct{}{}

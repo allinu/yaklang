@@ -170,6 +170,8 @@ type ImageDescription struct {
 type ChatBaseContext struct {
 	PoCOptionGenerator  func() ([]poc.PocConfigOption, error)
 	EnableThinking      bool
+	EnableThinkingField string
+	EnableThinkingValue any
 	ThinkingBudget      int64
 	StreamHandler       func(io.Reader)
 	ReasonStreamHandler func(reader io.Reader)
@@ -188,6 +190,14 @@ func WithChatBase_ThinkingBudget(budget int64) ChatBaseOption {
 func WithChatBase_EnableThinking(b bool) ChatBaseOption {
 	return func(c *ChatBaseContext) {
 		c.EnableThinking = b
+	}
+}
+
+func WithChatBase_EnableThinkingEx(b bool, key string, value any) ChatBaseOption {
+	return func(c *ChatBaseContext) {
+		c.EnableThinking = b
+		c.EnableThinkingField = key
+		c.EnableThinkingValue = value
 	}
 }
 
@@ -263,13 +273,28 @@ func ChatBase(url string, model string, msg string, chatOpts ...ChatBaseOption) 
 		msgs = append(msgs, NewUserChatDetailEx(contents))
 	}
 	msgIns := NewChatMessage(model, msgs)
-
 	handleStream := streamHandler != nil
 	if handleStream {
 		msgIns.Stream = true
 	}
 
-	raw, err := json.Marshal(msgIns)
+	var msgResult any = msgIns
+	var raw []byte
+	if ctx.EnableThinkingField != "" {
+		raw, err = json.Marshal(msgIns)
+		if err != nil {
+			return "", utils.Errorf("marshal msg[%v] to json failed: %s", spew.Sdump(msgIns), err)
+		}
+		msgMap := make(map[string]any)
+		err = json.Unmarshal(raw, &msgMap)
+		if err != nil {
+			return "", utils.Errorf("unmarshal msg[%v] to map failed: %s", string(raw), err)
+		}
+		msgMap[ctx.EnableThinkingField] = ctx.EnableThinkingValue
+		msgResult = msgMap
+	}
+
+	raw, err = json.Marshal(msgResult)
 	if err != nil {
 		return "", utils.Errorf("build msg[%v] to json failed: %s", string(raw), err)
 	}
@@ -459,68 +484,4 @@ func ChatBasedExtractData(
 	}
 	result = strings.ReplaceAll(result, "`", "")
 	return ExtractFromResult(result, fields)
-}
-
-func ChatExBase(url string, model string, details []ChatDetail, dummyParam []any, opt func() ([]poc.PocConfigOption, error), streamHandler func(closer io.Reader)) ([]ChatChoice, error) {
-	handleStream := streamHandler != nil
-	opts, err := opt()
-	if err != nil {
-		return nil, err
-	}
-	msg := NewChatMessage(model, details)
-	if handleStream {
-		msg.Stream = true
-	}
-	raw, err := json.Marshal(msg)
-	if err != nil {
-		return nil, utils.Errorf("marshal message failed: %v", err)
-	}
-	opts = append(opts, poc.WithReplaceHttpPacketBody(raw, false))
-	opts = append(opts, poc.WithConnectTimeout(10))
-	opts = append(opts, poc.WithRetryTimes(3))
-
-	if handleStream {
-		var pr io.Reader
-		var body = bytes.NewBufferString("")
-		pr, opts = appendStreamHandlerPoCOption(opts)
-		wg := new(sync.WaitGroup)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			defer func() {
-				if err := recover(); err != nil {
-					log.Warnf("streamHandler panic: %v", err)
-				}
-			}()
-			streamHandler(io.TeeReader(pr, body))
-		}()
-		opts = append(opts, poc.WithSave(true))
-		_, _, err := poc.DoPOST(url, opts...)
-		if err != nil {
-			return nil, utils.Errorf("request post to %v：%v", url, err)
-		}
-		wg.Wait()
-		return []ChatChoice{
-			{
-				Index: 0,
-				Message: ChatDetail{
-					Role:    "system",
-					Name:    "",
-					Content: body.String(),
-				},
-				FinishReason: "stop",
-			},
-		}, nil
-	}
-
-	rsp, _, err := poc.DoPOST(url, opts...)
-	if err != nil {
-		return nil, utils.Errorf("request post to %v：%v", url, err)
-	}
-	var compl ChatCompletion
-	err = json.Unmarshal(rsp.GetBody(), &compl)
-	if err != nil {
-		return nil, utils.Errorf("JSON response (%v) failed：%v", string(rsp.GetBody()), err)
-	}
-	return compl.Choices, nil
 }

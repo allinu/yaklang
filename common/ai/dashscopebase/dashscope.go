@@ -58,10 +58,6 @@ func (d *DashScopeGateway) Chat(s string, function ...any) (string, error) {
 	return buf.String(), nil
 }
 
-func (d *DashScopeGateway) ChatEx(details []aispec.ChatDetail, function ...any) ([]aispec.ChatChoice, error) {
-	return nil, utils.Error("not implemented: dashscope is not supported openai style chat ex")
-}
-
 func (d *DashScopeGateway) ChatStream(s string) (io.Reader, error) {
 	ch, err := d.StructuredStream(s)
 	if err != nil {
@@ -319,7 +315,7 @@ func (d *DashScopeGateway) newLoadOption(opt ...aispec.AIConfigOption) {
 	d.config = config
 	d.dashscopeAPIKey = config.APIKey
 
-	d.endpointUrl = aispec.GetBaseURLFromConfig(d.config, "https://dashscope.aliyuncs.com", "/api/v1/apps/"+strings.TrimSpace(d.dashscopeAppId)+"/completion")
+	d.endpointUrl = aispec.GetBaseURLFromConfigEx(d.config, "https://dashscope.aliyuncs.com", "/api/v1/apps/"+strings.TrimSpace(d.dashscopeAppId)+"/completion", false)
 }
 
 func (d *DashScopeGateway) LoadOption(opt ...aispec.AIConfigOption) {

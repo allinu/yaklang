@@ -51673,8 +51673,13 @@ type MITMContentReplacer struct {
 	RegexpResultTemplate string   `protobuf:"bytes,21,opt,name=RegexpResultTemplate,proto3" json:"RegexpResultTemplate,omitempty"`
 	// Multi-stage chained regex output (global mode).
 	SecondaryStages []*RegexOutputStage `protobuf:"bytes,22,rep,name=SecondaryStages,proto3" json:"SecondaryStages,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// When true, Rule is treated as a plain-text literal: special regex characters
+	// (e.g. `.`, `*`, `+`) are matched literally without needing to be escaped.
+	// When false (default, zero value), Rule is compiled as a regular expression,
+	// preserving backward compatibility with existing rules.
+	ExactMatch    bool `protobuf:"varint,23,opt,name=ExactMatch,proto3" json:"ExactMatch,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *MITMContentReplacer) Reset() {
@@ -51859,6 +51864,13 @@ func (x *MITMContentReplacer) GetSecondaryStages() []*RegexOutputStage {
 		return x.SecondaryStages
 	}
 	return nil
+}
+
+func (x *MITMContentReplacer) GetExactMatch() bool {
+	if x != nil {
+		return x.ExactMatch
+	}
+	return false
 }
 
 type RemoveHookParams struct {
@@ -73346,7 +73358,7 @@ const file_yakgrpc_proto_rawDesc = "" +
 	"\x10RegexOutputStage\x12\x16\n" +
 	"\x06Regexp\x18\x01 \x01(\tR\x06Regexp\x12&\n" +
 	"\x0eResultTemplate\x18\x02 \x01(\tR\x0eResultTemplate\x12\x16\n" +
-	"\x06Joiner\x18\x03 \x01(\tR\x06Joiner\"\xbd\x06\n" +
+	"\x06Joiner\x18\x03 \x01(\tR\x06Joiner\"\xdd\x06\n" +
 	"\x13MITMContentReplacer\x12\x12\n" +
 	"\x04Rule\x18\x01 \x01(\tR\x04Rule\x12\x1c\n" +
 	"\tNoReplace\x18\x02 \x01(\bR\tNoReplace\x12\x16\n" +
@@ -73370,7 +73382,10 @@ const file_yakgrpc_proto_rawDesc = "" +
 	"\fRegexpGroups\x18\x13 \x03(\x03R\fRegexpGroups\x12$\n" +
 	"\rExcludeSuffix\x18\x14 \x03(\tR\rExcludeSuffix\x122\n" +
 	"\x14RegexpResultTemplate\x18\x15 \x01(\tR\x14RegexpResultTemplate\x12?\n" +
-	"\x0fSecondaryStages\x18\x16 \x03(\v2\x15.ypb.RegexOutputStageR\x0fSecondaryStages\"n\n" +
+	"\x0fSecondaryStages\x18\x16 \x03(\v2\x15.ypb.RegexOutputStageR\x0fSecondaryStages\x12\x1e\n" +
+	"\n" +
+	"ExactMatch\x18\x17 \x01(\bR\n" +
+	"ExactMatch\"n\n" +
 	"\x10RemoveHookParams\x12\x1a\n" +
 	"\bClearAll\x18\x01 \x01(\bR\bClearAll\x12\x1a\n" +
 	"\bHookName\x18\x02 \x03(\tR\bHookName\x12\"\n" +
